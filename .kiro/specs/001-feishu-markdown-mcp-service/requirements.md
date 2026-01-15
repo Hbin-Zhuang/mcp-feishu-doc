@@ -16,7 +16,8 @@
 
 **Why this priority**: 这是核心功能，是整个服务的基础能力。
 
-**Independent Test**: 
+**Independent Test**:
+
 1. 准备一个包含标准 Markdown 语法的文件
 2. 调用 MCP 工具 `feishu_upload_markdown`
 3. 验证飞书中创建了对应文档且格式正确
@@ -38,6 +39,7 @@
 **Why this priority**: 安全认证是使用飞书 API 的前提条件。
 
 **Independent Test**:
+
 1. 配置飞书应用的 App ID 和 App Secret
 2. 调用授权工具获取授权 URL
 3. 完成授权流程后验证 token 有效性
@@ -59,6 +61,7 @@
 **Why this priority**: 文件上传是文档完整性的重要保障，但不是最基础的文本转换功能。
 
 **Independent Test**:
+
 1. 准备包含本地图片引用的 Markdown 文件
 2. 调用上传工具并启用文件上传
 3. 验证图片在飞书文档中正确显示
@@ -80,6 +83,7 @@
 **Why this priority**: 知识库是飞书的重要功能，但云空间已经能满足基本需求。
 
 **Independent Test**:
+
 1. 配置目标为知识库并指定空间和节点
 2. 上传 Markdown 文档
 3. 验证文档出现在指定知识库位置
@@ -101,6 +105,7 @@
 **Why this priority**: 扩展语法提升用户体验，但不影响核心功能。
 
 **Independent Test**:
+
 1. 准备包含 Callout 语法的 Markdown
 2. 上传文档
 3. 验证 Callout 在飞书中正确显示为对应样式
@@ -122,6 +127,7 @@
 **Why this priority**: 更新功能提升用户体验，但创建新文档也能满足基本需求。
 
 **Independent Test**:
+
 1. 首次上传 Markdown 文档并记录文档 ID
 2. 修改 Markdown 内容
 3. 使用相同文档 ID 再次上传
@@ -144,6 +150,7 @@
 **Why this priority**: 这是特定场景的需求，不影响大多数用户。
 
 **Independent Test**:
+
 1. 配置过滤语言列表（如 `dataviewjs`）
 2. 上传包含该语言代码块的 Markdown
 3. 验证飞书文档中不包含该代码块
@@ -165,6 +172,7 @@
 **Why this priority**: 批量操作提升效率，但单文档上传已能满足基本需求。
 
 **Independent Test**:
+
 1. 准备多个 Markdown 文件（至少 5 个）
 2. 调用批量上传工具
 3. 验证所有文档都成功创建在飞书中
@@ -183,22 +191,17 @@
 
 - **循环引用**: 如果 Markdown A 引用 B，B 又引用 A，如何处理？
   - 系统应检测循环引用并停止递归，记录警告信息
-  
 - **超大文件**: 如果 Markdown 文件或图片超过飞书 API 限制，如何处理？
   - 返回明确的错误信息，提示文件大小限制
-  
 - **网络中断**: 上传过程中网络中断，如何恢复？
   - 实现重试机制，最多重试 3 次，失败后返回详细错误信息
-  
 - **并发上传**: 同时上传多个文档时，如何避免频率限制？
   - 实现智能频率控制，自动限制 API 调用频率
 
 - **并发更新冲突**: 多个用户同时更新同一文档，如何处理？
   - 通过时间戳检测冲突，后更新者收到冲突提示，可选择强制覆盖或放弃更新
-  
 - **特殊字符**: 文件名包含特殊字符（如 `/`, `\`, `:`）时如何处理？
   - 自动清理或替换特殊字符，确保文件名合法
-  
 - **空文档**: 如果 Markdown 文件为空或只包含 Front Matter，如何处理？
   - 创建空文档或返回警告，由用户配置决定
 
@@ -252,8 +255,10 @@
 ## 关键实体
 
 ### MarkdownDocument
+
 表示待上传的 Markdown 文档
-- **属性**: 
+
+- **属性**:
   - `content`: 文档内容（字符串）
   - `title`: 文档标题
   - `frontMatter`: Front Matter 数据（可选）
@@ -263,7 +268,9 @@
   - `baseDirectory`: 基准目录，用于解析相对路径（可选，如果提供文件路径则自动推断）
 
 ### FeishuDocument
+
 表示飞书中的文档
+
 - **属性**:
   - `documentId`: 飞书文档 ID
   - `url`: 文档访问 URL
@@ -274,7 +281,9 @@
 - **关系**: 由 MarkdownDocument 转换而来
 
 ### LocalFile
+
 表示 Markdown 中引用的本地文件
+
 - **属性**:
   - `path`: 文件路径
   - `type`: 文件类型（图片、PDF、文档等）
@@ -283,7 +292,9 @@
 - **关系**: 属于 MarkdownDocument
 
 ### FeishuAuth
+
 表示飞书认证信息
+
 - **属性**:
   - `appId`: 应用 ID
   - `appSecret`: 应用密钥
@@ -294,7 +305,9 @@
 - **关系**: 用于所有飞书 API 调用
 
 ### UploadConfig
+
 表示上传配置
+
 - **属性**:
   - `targetType`: 目标类型（drive 或 wiki）
   - `targetId`: 目标位置 ID
@@ -343,22 +356,26 @@
 ## 非功能需求
 
 ### 性能需求
+
 - 单个文档转换延迟不超过 2 秒
 - 支持并发处理多个文档（最多 5 个）
 - 批量上传 10 个文档（每个约 1MB）在 60 秒内完成
 - 内存占用不超过 500MB
 
 ### 安全需求
+
 - OAuth tokens 必须加密存储
 - 不在日志中记录敏感信息（tokens、密钥）
 - 支持 HTTPS 传输
 
 ### 可靠性需求
+
 - 实现自动重试机制（最多 3 次）
 - 实现优雅降级（文件上传失败不影响文本上传）
 - 提供详细的错误日志
 
 ### 可维护性需求
+
 - 代码遵循项目现有架构规范（AGENTS.md）
 - 提供完整的 TypeScript 类型定义
 - 提供单元测试覆盖率达到 80%
@@ -388,12 +405,14 @@
 ## 依赖关系
 
 ### 外部依赖
+
 - 飞书开放平台 API
 - MCP SDK (@modelcontextprotocol/sdk)
 - 项目现有的存储服务（StorageService）
 - 项目现有的日志服务（Logger）
 
 ### 内部依赖
+
 - 需要用户提供飞书应用凭证（App ID、App Secret）
 - 需要用户完成 OAuth 授权流程
 - 需要配置文件或环境变量支持
@@ -402,7 +421,7 @@
 
 从 feishushare 项目迁移到 MCP 服务的策略：
 
-1. **提取核心逻辑**: 
+1. **提取核心逻辑**:
    - MarkdownProcessor: Markdown 处理逻辑
    - FeishuApiService: 飞书 API 调用逻辑
    - ImageProcessingService: 图片处理逻辑
@@ -454,11 +473,13 @@
 ## 附录
 
 ### 参考资料
+
 - 飞书开放平台文档: https://open.feishu.cn/document/
 - MCP 协议规范: https://modelcontextprotocol.io/
 - feishushare 项目: feishushare/ 目录
 
 ### 术语表
+
 - **MCP**: Model Context Protocol，模型上下文协议
 - **OAuth 2.0**: 开放授权标准
 - **Front Matter**: Markdown 文件头部的元数据区域

@@ -1,7 +1,7 @@
 <div align="center">
   <h1>mcp-ts-template</h1>
   <p><b>用于构建模型上下文协议（MCP）服务器的生产级 TypeScript 模板。提供声明式工具/资源、强大的错误处理、依赖注入、简易身份验证、可选的 OpenTelemetry，以及对本地和边缘（Cloudflare Workers）运行时的优先支持。</b>
-  <div>6 个工具 • 1 个资源 • 1 个提示</div>
+  <div>16 个工具 • 1 个资源 • 1 个提示</div>
   </p>
 </div>
 
@@ -74,25 +74,40 @@
 
 ### 工具
 
-| 工具                                | 描述                                                              |
-| :---------------------------------- | :----------------------------------------------------------------------- |
-| **`template_echo_message`**         | 回显消息，支持可选的格式化和重复。           |
-| **`template_cat_fact`**             | 从外部 API 获取随机猫咪趣事。                          |
-| **`template_madlibs_elicitation`**  | 通过询问单词来完成故事，演示引导功能。        |
-| **`template_code_review_sampling`** | 使用 LLM 服务执行模拟代码审查。                 |
-| **`template_image_test`**           | 返回一个测试图像作为 base64 编码的数据 URI。                       |
+| 工具                                | 描述                                           |
+| :---------------------------------- | :--------------------------------------------- |
+| **`template_echo_message`**         | 回显消息，支持可选的格式化和重复。             |
+| **`template_cat_fact`**             | 从外部 API 获取随机猫咪趣事。                  |
+| **`template_madlibs_elicitation`**  | 通过询问单词来完成故事，演示引导功能。         |
+| **`template_code_review_sampling`** | 使用 LLM 服务执行模拟代码审查。                |
+| **`template_image_test`**           | 返回一个测试图像作为 base64 编码的数据 URI。   |
 | **`template_async_countdown`**      | 使用异步倒计时器演示 MCP Tasks API（实验性）。 |
+
+### 飞书 Markdown 工具
+
+| 工具                               | 描述                                   |
+| :--------------------------------- | :------------------------------------- |
+| **`feishu_auth_url`**              | 生成飞书 OAuth 2.0 授权链接。          |
+| **`feishu_auth_callback`**         | 处理飞书 OAuth 授权回调。              |
+| **`feishu_upload_markdown`**       | 上传 Markdown 文档到飞书云文档。       |
+| **`feishu_update_document`**       | 更新已存在的飞书文档（支持冲突检测）。 |
+| **`feishu_batch_upload_markdown`** | 批量上传多个 Markdown 文档。           |
+| **`feishu_list_folders`**          | 列出飞书云空间文件夹。                 |
+| **`feishu_list_wikis`**            | 列出飞书知识库空间。                   |
+| **`feishu_get_user_info`**         | 获取当前飞书用户信息。                 |
+| **`feishu_set_default_app`**       | 设置默认飞书应用。                     |
+| **`feishu_list_apps`**             | 列出已配置的飞书应用。                 |
 
 ### 资源
 
-| 资源   | URI                | 描述                                   |
-| :--------- | :----------------- | :-------------------------------------------- |
+| 资源       | URI                | 描述                       |
+| :--------- | :----------------- | :------------------------- |
 | **`echo`** | `echo://{message}` | 一个简单的资源，回显消息。 |
 
 ### 提示
 
-| 提示            | 描述                                                      |
-| :---------------- | :--------------------------------------------------------------- |
+| 提示              | 描述                                    |
+| :---------------- | :-------------------------------------- |
 | **`code-review`** | 用于指导 LLM 执行代码审查的结构化提示。 |
 
 ## 🚀 快速开始
@@ -147,26 +162,29 @@ npm install
 
 所有配置都在 `src/config/index.ts` 中集中管理并在启动时验证。`.env` 文件中的关键环境变量包括：
 
-| 变量                    | 描述                                                                                                             | 默认值     |
-| :-------------------------- | :---------------------------------------------------------------------------------------------------------------------- | :---------- |
-| `MCP_TRANSPORT_TYPE`        | 要使用的传输方式：`stdio` 或 `http`。                                                                                | `http`      |
-| `MCP_HTTP_PORT`             | HTTP 服务器的端口。                                                                                           | `3010`      |
-| `MCP_HTTP_HOST`             | HTTP 服务器的主机名。                                                                                       | `127.0.0.1` |
-| `MCP_AUTH_MODE`             | 身份验证模式：`none`、`jwt` 或 `oauth`。                                                                         | `none`      |
-| `MCP_AUTH_SECRET_KEY`       | **`jwt` 身份验证模式必需。** 32+ 字符的密钥。                                                               | `(none)`    |
-| `OAUTH_ISSUER_URL`          | **`oauth` 身份验证模式必需。** OIDC 提供者的 URL。                                                           | `(none)`    |
+| 变量                        | 描述                                                                                                              | 默认值      |
+| :-------------------------- | :---------------------------------------------------------------------------------------------------------------- | :---------- |
+| `MCP_TRANSPORT_TYPE`        | 要使用的传输方式：`stdio` 或 `http`。                                                                             | `http`      |
+| `MCP_HTTP_PORT`             | HTTP 服务器的端口。                                                                                               | `3010`      |
+| `MCP_HTTP_HOST`             | HTTP 服务器的主机名。                                                                                             | `127.0.0.1` |
+| `MCP_AUTH_MODE`             | 身份验证模式：`none`、`jwt` 或 `oauth`。                                                                          | `none`      |
+| `MCP_AUTH_SECRET_KEY`       | **`jwt` 身份验证模式必需。** 32+ 字符的密钥。                                                                     | `(none)`    |
+| `OAUTH_ISSUER_URL`          | **`oauth` 身份验证模式必需。** OIDC 提供者的 URL。                                                                | `(none)`    |
 | `STORAGE_PROVIDER_TYPE`     | 存储后端：`in-memory`、`filesystem`、`supabase`、`surrealdb`、`cloudflare-d1`、`cloudflare-kv`、`cloudflare-r2`。 | `in-memory` |
-| `STORAGE_FILESYSTEM_PATH`   | **`filesystem` 存储必需。** 存储目录的路径。                                                   | `(none)`    |
-| `SUPABASE_URL`              | **`supabase` 存储必需。** 您的 Supabase 项目 URL。                                                         | `(none)`    |
-| `SUPABASE_SERVICE_ROLE_KEY` | **`supabase` 存储必需。** 您的 Supabase 服务角色密钥。                                                    | `(none)`    |
-| `SURREALDB_URL`             | **`surrealdb` 存储必需。** SurrealDB 端点（例如，`wss://cloud.surrealdb.com/rpc`）。                       | `(none)`    |
-| `SURREALDB_NAMESPACE`       | **`surrealdb` 存储必需。** SurrealDB 命名空间。                                                              | `(none)`    |
-| `SURREALDB_DATABASE`        | **`surrealdb` 存储必需。** SurrealDB 数据库名称。                                                          | `(none)`    |
-| `SURREALDB_USERNAME`        | **`surrealdb` 存储可选。** 用于身份验证的数据库用户名。                                             | `(none)`    |
-| `SURREALDB_PASSWORD`        | **`surrealdb` 存储可选。** 用于身份验证的数据库密码。                                             | `(none)`    |
-| `OTEL_ENABLED`              | 设置为 `true` 以启用 OpenTelemetry。                                                                                  | `false`     |
-| `LOG_LEVEL`                 | 日志记录的最低级别（`debug`、`info`、`warn`、`error`）。                                                       | `info`      |
-| `OPENROUTER_API_KEY`        | OpenRouter LLM 服务的 API 密钥。                                                                                     | `(none)`    |
+| `STORAGE_FILESYSTEM_PATH`   | **`filesystem` 存储必需。** 存储目录的路径。                                                                      | `(none)`    |
+| `FEISHU_DEFAULT_APP_ID`     | 飞书应用 ID（可选，也可通过 OAuth 流程配置）。                                                                    | `(none)`    |
+| `FEISHU_DEFAULT_APP_SECRET` | 飞书应用密钥（可选）。                                                                                            | `(none)`    |
+| `FEISHU_OAUTH_CALLBACK_URL` | 飞书 OAuth 回调地址。                                                                                             | `(none)`    |
+| `SUPABASE_URL`              | **`supabase` 存储必需。** 您的 Supabase 项目 URL。                                                                | `(none)`    |
+| `SUPABASE_SERVICE_ROLE_KEY` | **`supabase` 存储必需。** 您的 Supabase 服务角色密钥。                                                            | `(none)`    |
+| `SURREALDB_URL`             | **`surrealdb` 存储必需。** SurrealDB 端点（例如，`wss://cloud.surrealdb.com/rpc`）。                              | `(none)`    |
+| `SURREALDB_NAMESPACE`       | **`surrealdb` 存储必需。** SurrealDB 命名空间。                                                                   | `(none)`    |
+| `SURREALDB_DATABASE`        | **`surrealdb` 存储必需。** SurrealDB 数据库名称。                                                                 | `(none)`    |
+| `SURREALDB_USERNAME`        | **`surrealdb` 存储可选。** 用于身份验证的数据库用户名。                                                           | `(none)`    |
+| `SURREALDB_PASSWORD`        | **`surrealdb` 存储可选。** 用于身份验证的数据库密码。                                                             | `(none)`    |
+| `OTEL_ENABLED`              | 设置为 `true` 以启用 OpenTelemetry。                                                                              | `false`     |
+| `LOG_LEVEL`                 | 日志记录的最低级别（`debug`、`info`、`warn`、`error`）。                                                          | `info`      |
+| `OPENROUTER_API_KEY`        | OpenRouter LLM 服务的 API 密钥。                                                                                  | `(none)`    |
 
 ### 身份验证和授权
 
@@ -237,17 +255,17 @@ bun deploy:prod
 
 ## 📂 项目结构
 
-| 目录                              | 用途和内容                                                                   | 指南                                |
-| :------------------------------------- | :----------------------------------------------------------------------------------- | :----------------------------------- |
-| `src/mcp-server/tools/definitions`     | 您的工具定义（`*.tool.ts`）。这是您添加新功能的地方。         | [📖 MCP 指南](src/mcp-server/)      |
-| `src/mcp-server/resources/definitions` | 您的资源定义（`*.resource.ts`）。这是您添加新数据源的地方。 | [📖 MCP 指南](src/mcp-server/)      |
-| `src/mcp-server/transports`            | HTTP 和 STDIO 传输的实现，包括身份验证中间件。            | [📖 MCP 指南](src/mcp-server/)      |
-| `src/storage`                          | `StorageService` 抽象和所有存储提供者实现。           | [💾 存储指南](src/storage/)     |
-| `src/services`                         | 与外部服务的集成（例如，默认的 OpenRouter LLM 提供者）。     | [🔌 服务指南](src/services/)   |
-| `src/container`                        | 依赖注入容器注册和令牌。                             | [📦 容器指南](src/container/) |
-| `src/utils`                            | 用于日志记录、错误处理、性能、安全和遥测的核心工具。    |                                      |
-| `src/config`                           | 使用 Zod 进行环境变量解析和验证。                                |                                      |
-| `tests/`                               | 单元和集成测试，镜像 `src/` 目录结构。                |                                      |
+| 目录                                   | 用途和内容                                                  | 指南                           |
+| :------------------------------------- | :---------------------------------------------------------- | :----------------------------- |
+| `src/mcp-server/tools/definitions`     | 您的工具定义（`*.tool.ts`）。这是您添加新功能的地方。       | [📖 MCP 指南](src/mcp-server/) |
+| `src/mcp-server/resources/definitions` | 您的资源定义（`*.resource.ts`）。这是您添加新数据源的地方。 | [📖 MCP 指南](src/mcp-server/) |
+| `src/mcp-server/transports`            | HTTP 和 STDIO 传输的实现，包括身份验证中间件。              | [📖 MCP 指南](src/mcp-server/) |
+| `src/storage`                          | `StorageService` 抽象和所有存储提供者实现。                 | [💾 存储指南](src/storage/)    |
+| `src/services`                         | 与外部服务的集成（例如，默认的 OpenRouter LLM 提供者）。    | [🔌 服务指南](src/services/)   |
+| `src/container`                        | 依赖注入容器注册和令牌。                                    | [📦 容器指南](src/container/)  |
+| `src/utils`                            | 用于日志记录、错误处理、性能、安全和遥测的核心工具。        |                                |
+| `src/config`                           | 使用 Zod 进行环境变量解析和验证。                           |                                |
+| `tests/`                               | 单元和集成测试，镜像 `src/` 目录结构。                      |                                |
 
 ## 📚 文档
 
