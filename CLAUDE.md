@@ -49,19 +49,19 @@
 
 关注点分离直接映射到文件系统。始终将文件放在其指定位置。
 
-| 目录                                   | 用途与指导                                                                                                                                                                                                                                                                                                                |
-| :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`src/mcp-server/tools/definitions/`**     | **MCP 工具定义。** 在此处添加新功能，文件名为 `[tool-name].tool.ts`。遵循 **工具开发工作流程**。                                                                                                                                                                                                           |
-| **`src/mcp-server/resources/definitions/`** | **MCP 资源定义。** 添加数据源或上下文，文件名为 `[resource-name].resource.ts`。遵循 **资源开发工作流程**。                                                                                                                                                                                        |
-| **`src/mcp-server/tools/utils/`**           | **共享工具实用程序：** 核心工具基础设施（`ToolDefinition`、`toolHandlerFactory`）                                                                                                                                                                                                                                      |
-| **`src/mcp-server/resources/utils/`**       | **共享资源实用程序，** 包括 `ResourceDefinition` 和资源处理器工厂。                                                                                                                                                                                                                                       |
-| **`src/mcp-server/tasks/`**                 | **Tasks API 基础设施（实验性）。** 包含 `TaskManager`、`TaskToolDefinition` 和来自 SDK 的类型重新导出。任务工具定义放在 `tools/definitions/` 中，后缀为 `.task-tool.ts`。                                                                                                                            |
-| **`src/mcp-server/transports/`**            | **传输实现：**<br>- `http/`（Hono + `@hono/mcp` Streamable HTTP）<br>- `stdio/`（MCP 规范 stdio 传输）<br>- `auth/`（策略和辅助函数）。HTTP 模式可以强制执行 JWT 或 OAuth。Stdio 模式不应实现基于 HTTP 的身份验证。                                                                             |
+| 目录                                        | 用途与指导                                                                                                                                                                                                                  |
+| :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`src/mcp-server/tools/definitions/`**     | **MCP 工具定义。** 在此处添加新功能，文件名为 `[tool-name].tool.ts`。遵循 **工具开发工作流程**。                                                                                                                            |
+| **`src/mcp-server/resources/definitions/`** | **MCP 资源定义。** 添加数据源或上下文，文件名为 `[resource-name].resource.ts`。遵循 **资源开发工作流程**。                                                                                                                  |
+| **`src/mcp-server/tools/utils/`**           | **共享工具实用程序：** 核心工具基础设施（`ToolDefinition`、`toolHandlerFactory`）                                                                                                                                           |
+| **`src/mcp-server/resources/utils/`**       | **共享资源实用程序，** 包括 `ResourceDefinition` 和资源处理器工厂。                                                                                                                                                         |
+| **`src/mcp-server/tasks/`**                 | **Tasks API 基础设施（实验性）。** 包含 `TaskManager`、`TaskToolDefinition` 和来自 SDK 的类型重新导出。任务工具定义放在 `tools/definitions/` 中，后缀为 `.task-tool.ts`。                                                   |
+| **`src/mcp-server/transports/`**            | **传输实现：**<br>- `http/`（Hono + `@hono/mcp` Streamable HTTP）<br>- `stdio/`（MCP 规范 stdio 传输）<br>- `auth/`（策略和辅助函数）。HTTP 模式可以强制执行 JWT 或 OAuth。Stdio 模式不应实现基于 HTTP 的身份验证。         |
 | **`src/services/`**                         | **外部服务集成** 遵循一致的领域驱动模式：<br>- 每个服务域（例如，`llm/`、`speech/`）包含：`core/`（接口、编排器）、`providers/`（实现）、`types.ts` 和 `index.ts`<br>- 对所有服务依赖使用 DI。参见下面的 **服务开发模式**。 |
-| **`src/storage/`**                          | **抽象和提供者实现**（内存、文件系统、supabase、surrealdb、cloudflare-r2、cloudflare-kv）。                                                                                                                                                                                                         |
-| **`src/container/`**                        | **依赖注入（`tsyringe`）。** 服务注册和令牌。                                                                                                                                                                                                                                                           |
-| **`src/utils/`**                            | **全局实用程序。** 包括日志记录、性能、解析、网络、安全、格式化和遥测。注意：错误处理模块位于 `src/utils/internal/error-handler/`。                                                                                                                                    |
-| **`tests/`**                                | **单元/集成测试。** 镜像 `src/` 以便于导航，包括合规性套件。                                                                                                                                                                                                                                    |
+| **`src/storage/`**                          | **抽象和提供者实现**（内存、文件系统、supabase、surrealdb、cloudflare-r2、cloudflare-kv）。                                                                                                                                 |
+| **`src/container/`**                        | **依赖注入（`tsyringe`）。** 服务注册和令牌。                                                                                                                                                                               |
+| **`src/utils/`**                            | **全局实用程序。** 包括日志记录、性能、解析、网络、安全、格式化和遥测。注意：错误处理模块位于 `src/utils/internal/error-handler/`。                                                                                         |
+| **`tests/`**                                | **单元/集成测试。** 镜像 `src/` 以便于导航，包括合规性套件。                                                                                                                                                                |
 
 ---
 
@@ -193,17 +193,17 @@
 
 #### DI 管理的服务（`src/container/tokens.ts` 中的令牌）
 
-| 服务           | 令牌                   | 用法                                                                   | 说明                          |
-| ----------------- | ----------------------- | ----------------------------------------------------------------------- | ------------------------------ |
-| `ILlmProvider`    | `LlmProvider`           | `@inject(LlmProvider) private llmProvider: ILlmProvider`                |                                |
-| `IGraphProvider`  | `GraphProvider`         | `@inject(GraphProvider) private graphProvider: IGraphProvider`          | 仅在使用图功能时 |
-| `StorageService`  | `StorageService`        | `@inject(StorageService) private storage: StorageService`               | 需要 `context.tenantId`    |
-| `RateLimiter`     | `RateLimiterService`    | `@inject(RateLimiterService) private rateLimiter: RateLimiter`          |                                |
-| `Logger`          | `Logger`                | `@inject(Logger) private logger: typeof logger`                         | 基于 Pino 的单例          |
-| 应用配置        | `AppConfig`             | `@inject(AppConfig) private config: typeof configModule`                |                                |
-| Supabase 客户端   | `SupabaseAdminClient`   | `@inject(SupabaseAdminClient) private client: SupabaseClient<Database>` | 仅在需要时               |
-| SurrealDB 客户端  | `SurrealdbClient`       | `@inject(SurrealdbClient) private client: Surreal`                      | 仅在需要时               |
-| 传输管理器 | `TransportManagerToken` | `@inject(TransportManagerToken) private tm: TransportManager`           |                                |
+| 服务             | 令牌                    | 用法                                                                    | 说明                    |
+| ---------------- | ----------------------- | ----------------------------------------------------------------------- | ----------------------- |
+| `ILlmProvider`   | `LlmProvider`           | `@inject(LlmProvider) private llmProvider: ILlmProvider`                |                         |
+| `IGraphProvider` | `GraphProvider`         | `@inject(GraphProvider) private graphProvider: IGraphProvider`          | 仅在使用图功能时        |
+| `StorageService` | `StorageService`        | `@inject(StorageService) private storage: StorageService`               | 需要 `context.tenantId` |
+| `RateLimiter`    | `RateLimiterService`    | `@inject(RateLimiterService) private rateLimiter: RateLimiter`          |                         |
+| `Logger`         | `Logger`                | `@inject(Logger) private logger: typeof logger`                         | 基于 Pino 的单例        |
+| 应用配置         | `AppConfig`             | `@inject(AppConfig) private config: typeof configModule`                |                         |
+| Supabase 客户端  | `SupabaseAdminClient`   | `@inject(SupabaseAdminClient) private client: SupabaseClient<Database>` | 仅在需要时              |
+| SurrealDB 客户端 | `SurrealdbClient`       | `@inject(SurrealdbClient) private client: Surreal`                      | 仅在需要时              |
+| 传输管理器       | `TransportManagerToken` | `@inject(TransportManagerToken) private tm: TransportManager`           |                         |
 
 **图服务：** 通过 SurrealDB 进行图操作（关系、遍历、路径查找）。注入 `IGraphProvider`。操作：`relate()`、`unrelate()`、`traverse()`、`shortestPath()`、`get{Outgoing|Incoming}Edges()`、`pathExists()`。
 
@@ -218,15 +218,15 @@
 
 #### 实用程序模块（`src/utils/`）
 
-| 模块        | 主要导出                                                                                                           |
-| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 模块          | 主要导出                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------- |
 | `parsing/`    | `csvParser`、`yamlParser`、`xmlParser`、`jsonParser`、`pdfParser`、`frontmatterParser`（处理 LLM `<think>` 块） |
-| `formatting/` | `MarkdownBuilder`、`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`                            |
-| `security/`   | `sanitization`、`rateLimiter`、`idGenerator`                                                                          |
-| `network/`    | `fetchWithTimeout`                                                                                                    |
-| `scheduling/` | `scheduler`（node-cron 包装器）                                                                                       |
-| `internal/`   | `logger`、`requestContextService`、`ErrorHandler`、`performance`                                                      |
-| `telemetry/`  | OpenTelemetry 检测                                                                                         |
+| `formatting/` | `MarkdownBuilder`、`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`                    |
+| `security/`   | `sanitization`、`rateLimiter`、`idGenerator`                                                                    |
+| `network/`    | `fetchWithTimeout`                                                                                              |
+| `scheduling/` | `scheduler`（node-cron 包装器）                                                                                 |
+| `internal/`   | `logger`、`requestContextService`、`ErrorHandler`、`performance`                                                |
+| `telemetry/`  | OpenTelemetry 检测                                                                                              |
 
 ---
 
@@ -292,15 +292,15 @@ EOF
 
 ## X. 检查与工作流程命令
 
-| 命令                    | 用途                                                                                        |
-| -------------------------- | ---------------------------------------------------------------------------------------------- |
-| `npm run rebuild`          | 清理并重建（依赖更改后）                                                          |
-| `npm run typecheck`        | TypeScript 类型检查                                                                       |
-| `npm run lint`             | ESLint 代码检查                                                                           |
-| `npm run test`             | 单元/集成测试                                                                         |
-| `npm run dev:stdio/http`   | 开发模式                                                                               |
-| `npm run start:stdio/http` | 生产模式（构建后）                                                                  |
-| `npm run build`            | 生产构建                                                                           |
+| 命令                       | 用途                     |
+| -------------------------- | ------------------------ |
+| `npm run rebuild`          | 清理并重建（依赖更改后） |
+| `npm run typecheck`        | TypeScript 类型检查      |
+| `npm run lint`             | ESLint 代码检查          |
+| `npm run test`             | 单元/集成测试            |
+| `npm run dev:stdio/http`   | 开发模式                 |
+| `npm run start:stdio/http` | 生产模式（构建后）       |
+| `npm run build`            | 生产构建                 |
 
 ---
 
@@ -308,13 +308,13 @@ EOF
 
 所有配置通过 `src/config/index.ts` 中的 Zod 进行验证。从 `package.json` 派生 `serviceName`/`version`。
 
-| 类别      | 关键变量                                                                                                   |
-| ------------- | --------------------------------------------------------------------------------------------------------------- |
-| **传输** | `MCP_TRANSPORT_TYPE`（`stdio`\|`http`）、`MCP_HTTP_PORT/HOST/PATH`                                               |
-| **身份验证**      | `MCP_AUTH_MODE`（`none`\|`jwt`\|`oauth`）、`MCP_AUTH_SECRET_KEY`、`OAUTH_*`                                      |
-| **存储**   | `STORAGE_PROVIDER_TYPE`（`in-memory`\|`filesystem`\|`supabase`\|`surrealdb`\|`cloudflare-r2/kv`）、`SURREALDB_*` |
-| **LLM**       | `OPENROUTER_API_KEY`、`OPENROUTER_APP_URL/NAME`、`LLM_DEFAULT_*`                                                |
-| **遥测** | `OTEL_ENABLED`、`OTEL_SERVICE_NAME/VERSION`、`OTEL_EXPORTER_OTLP_*`                                             |
+| 类别         | 关键变量                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| **传输**     | `MCP_TRANSPORT_TYPE`（`stdio`\|`http`）、`MCP_HTTP_PORT/HOST/PATH`                                               |
+| **身份验证** | `MCP_AUTH_MODE`（`none`\|`jwt`\|`oauth`）、`MCP_AUTH_SECRET_KEY`、`OAUTH_*`                                      |
+| **存储**     | `STORAGE_PROVIDER_TYPE`（`in-memory`\|`filesystem`\|`supabase`\|`surrealdb`\|`cloudflare-r2/kv`）、`SURREALDB_*` |
+| **LLM**      | `OPENROUTER_API_KEY`、`OPENROUTER_APP_URL/NAME`、`LLM_DEFAULT_*`                                                 |
+| **遥测**     | `OTEL_ENABLED`、`OTEL_SERVICE_NAME/VERSION`、`OTEL_EXPORTER_OTLP_*`                                              |
 
 ---
 

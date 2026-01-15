@@ -1,0 +1,684 @@
+# 飞书 API 接口文档
+# 记录本服务使用的飞书开放平台 API
+# 版本: 1.0.0
+
+openapi: 3.0.3
+info:
+  title: 飞书开放平台 API
+  description: |
+    本文档记录飞书 Markdown MCP 服务使用的飞书开放平台 API。
+    完整文档请参考：https://open.feishu.cn/document/
+  version: 1.0.0
+  contact:
+    name: 飞书开放平台
+    url: https://open.feishu.cn
+
+servers:
+  - url: https://open.feishu.cn/open-apis
+    description: 飞书开放平台 API 服务器
+
+# ============================================
+# OAuth 2.0 认证
+# ============================================
+paths:
+  /authen/v1/authorize:
+    get:
+      summary: 获取授权码
+      description: |
+        用户授权页面，用户在此页面登录并授权应用访问其数据。
+        这是一个重定向 URL，不是 API 调用。
+      tags:
+        - OAuth
+      parameters:
+        - name: app_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 应用 ID
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 授权回调地址
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: 状态参数，用于防止 CSRF 攻击
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: 权限范围，空格分隔
+      responses:
+        '302':
+          description: 重定向到飞书登录页面
+
+  /authen/v1/oidc/access_token:
+    post:
+      summary: 获取访问令牌
+      description: 使用授权码交换访问令牌
+      tags:
+        - OAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - code
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                code:
+                  type: string
+                  description: 授权码
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  msg:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      access_token:
+                        type: string
+                      refresh_token:
+                        type: string
+                      token_type:
+                        type: string
+                      expires_in:
+                        type: integer
+                      refresh_expires_in:
+                        type: integer
+
+  /authen/v1/oidc/refresh_access_token:
+    post:
+      summary: 刷新访问令牌
+      description: 使用刷新令牌获取新的访问令牌
+      tags:
+        - OAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - refresh_token
+              properties:
+                grant_type:
+                  type: string
+                  enum: [refresh_token]
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+
+  /authen/v1/user_info:
+    get:
+      summary: 获取用户信息
+      description: 获取当前授权用户的基本信息
+      tags:
+        - OAuth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  msg:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                      name:
+                        type: string
+                      en_name:
+                        type: string
+                      email:
+                        type: string
+                      avatar_url:
+                        type: string
+                      avatar_thumb:
+                        type: string
+                      avatar_middle:
+                        type: string
+                      avatar_big:
+                        type: string
+                      open_id:
+                        type: string
+                      union_id:
+                        type: string
+                      tenant_key:
+                        type: string
+
+# ============================================
+# 文档操作
+# ============================================
+  /docx/v1/documents:
+    post:
+      summary: 创建文档
+      description: 在指定位置创建新的飞书文档
+      tags:
+        - Document
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: folder_token
+          in: query
+          schema:
+            type: string
+          description: 目标文件夹 token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: 文档标题
+                folder_token:
+                  type: string
+                  description: 文件夹 token
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  msg:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      document:
+                        type: object
+                        properties:
+                          document_id:
+                            type: string
+                          revision_id:
+                            type: integer
+                          title:
+                            type: string
+
+  /docx/v1/documents/{document_id}/raw_content:
+    patch:
+      summary: 更新文档内容
+      description: 更新文档的原始内容
+      tags:
+        - Document
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  description: 文档内容（JSON 格式的块结构）
+      responses:
+        '200':
+          description: 成功
+
+  /docx/v1/documents/{document_id}:
+    get:
+      summary: 获取文档元信息
+      description: 获取文档的基本信息
+      tags:
+        - Document
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      document:
+                        type: object
+                        properties:
+                          document_id:
+                            type: string
+                          revision_id:
+                            type: integer
+                          title:
+                            type: string
+
+# ============================================
+# 文件上传
+# ============================================
+  /drive/v1/medias/upload_all:
+    post:
+      summary: 上传文件
+      description: 上传文件到飞书云空间
+      tags:
+        - File
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file_name
+                - parent_type
+                - parent_node
+                - size
+                - file
+              properties:
+                file_name:
+                  type: string
+                  description: 文件名
+                parent_type:
+                  type: string
+                  enum: [doc_image, docx_image, sheet_image, doc_file, docx_file, sheet_file, vc_virtual_background, bitable_image, bitable_file, moments, ccm_import_open]
+                  description: 上传点类型
+                parent_node:
+                  type: string
+                  description: 上传点 token
+                size:
+                  type: integer
+                  description: 文件大小（字节）
+                file:
+                  type: string
+                  format: binary
+                  description: 文件内容
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      file_token:
+                        type: string
+                        description: 文件 token
+
+# ============================================
+# 云空间
+# ============================================
+  /drive/v1/files:
+    get:
+      summary: 获取文件夹中的文件列表
+      description: 获取指定文件夹下的文件和子文件夹列表
+      tags:
+        - Drive
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: folder_token
+          in: query
+          schema:
+            type: string
+          description: 文件夹 token，不传则获取根目录
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: page_token
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      files:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            token:
+                              type: string
+                            name:
+                              type: string
+                            type:
+                              type: string
+                              enum: [doc, sheet, mindnote, bitable, docx, folder, file]
+                            parent_token:
+                              type: string
+                            url:
+                              type: string
+                            created_time:
+                              type: string
+                            modified_time:
+                              type: string
+                      has_more:
+                        type: boolean
+                      page_token:
+                        type: string
+
+  /drive/v1/root_folder/meta:
+    get:
+      summary: 获取根文件夹元信息
+      description: 获取用户云空间根文件夹的元信息
+      tags:
+        - Drive
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      id:
+                        type: string
+                      user_id:
+                        type: string
+
+# ============================================
+# 知识库
+# ============================================
+  /wiki/v2/spaces:
+    get:
+      summary: 获取知识库列表
+      description: 获取用户有权限访问的知识库空间列表
+      tags:
+        - Wiki
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page_size:
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: page_token
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            space_id:
+                              type: string
+                            name:
+                              type: string
+                            description:
+                              type: string
+                            space_type:
+                              type: string
+                            visibility:
+                              type: string
+                      has_more:
+                        type: boolean
+                      page_token:
+                        type: string
+
+  /wiki/v2/spaces/{space_id}/nodes:
+    get:
+      summary: 获取知识库节点列表
+      description: 获取知识库空间下的节点列表
+      tags:
+        - Wiki
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: parent_node_token
+          in: query
+          schema:
+            type: string
+          description: 父节点 token，不传则获取根节点
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: page_token
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_token:
+                              type: string
+                            obj_token:
+                              type: string
+                            obj_type:
+                              type: string
+                            parent_node_token:
+                              type: string
+                            node_type:
+                              type: string
+                            origin_node_token:
+                              type: string
+                            origin_space_id:
+                              type: string
+                            has_child:
+                              type: boolean
+                            title:
+                              type: string
+                            obj_create_time:
+                              type: string
+                            obj_edit_time:
+                              type: string
+                            node_create_time:
+                              type: string
+                            creator:
+                              type: string
+                            owner:
+                              type: string
+                      has_more:
+                        type: boolean
+                      page_token:
+                        type: string
+
+    post:
+      summary: 创建知识库节点
+      description: 在知识库空间中创建新节点（文档）
+      tags:
+        - Wiki
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - obj_type
+                - title
+              properties:
+                obj_type:
+                  type: string
+                  enum: [doc, sheet, mindnote, bitable, file, docx, slides]
+                  description: 节点类型
+                parent_node_token:
+                  type: string
+                  description: 父节点 token
+                title:
+                  type: string
+                  description: 节点标题
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      node:
+                        type: object
+                        properties:
+                          node_token:
+                            type: string
+                          obj_token:
+                            type: string
+
+# ============================================
+# 安全定义
+# ============================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 用户访问令牌
+
+# ============================================
+# API 限制说明
+# ============================================
+x-rate-limits:
+  description: |
+    飞书开放平台 API 有调用频率限制：
+    - 默认限制：100 次/分钟/应用
+    - 部分 API 有更严格的限制
+    
+    建议：
+    - 使用 RateLimiter 控制调用频率
+    - 实现指数退避重试机制
+    - 批量操作时控制并发数
+  
+  endpoints:
+    /docx/v1/documents:
+      limit: 100/min
+    /drive/v1/medias/upload_all:
+      limit: 50/min
+    /wiki/v2/spaces/{space_id}/nodes:
+      limit: 100/min
+
+# ============================================
+# 错误码说明
+# ============================================
+x-error-codes:
+  0:
+    description: 成功
+  99991400:
+    description: 参数错误
+  99991401:
+    description: 未授权
+  99991403:
+    description: 权限不足
+  99991404:
+    description: 资源不存在
+  99991429:
+    description: 请求频率超限
+  99991500:
+    description: 服务器内部错误

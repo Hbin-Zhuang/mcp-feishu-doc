@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "feishu-doc-mcp": {
+      "command": "/Volumes/Document/project/typescript/feishu-doc-mcp/node_modules/.bin/tsx",
+      "args": [
+        "/Volumes/Document/project/typescript/feishu-doc-mcp/src/index.ts"
+      ],
+      "cwd": "/Volumes/Document/project/typescript/feishu-doc-mcp",
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "debug"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "feishu_auth_url",
+        "feishu_auth_callback",
+        "feishu_list_apps",
+        "feishu_get_user_info",
+        "feishu_get_user_info",
+        "feishu_list_wikis",
+        "feishu_list_folders",
+        "feishu_list_wikis",
+        "feishu_upload_markdown",
+        "feishu_upload_markdown",
+        "feishu_upload_markdown"
+      ]
+    }
+  }
+}

@@ -15,6 +15,7 @@
 **Context**: 规范中提到需要实现 OAuth 2.0 认证流程（FR-002, FR-024, FR-025），但 MCP 服务通常运行在后台，没有 Web 服务器来接收 OAuth 回调。
 
 **Options Presented**:
+
 - **A**: 使用项目现有的 HTTP 传输模式，在 `/oauth/callback` 端点接收回调
 - **B**: 提供两种模式：HTTP 模式直接接收回调，stdio 模式使用外部回调服务器
 - **C**: 仅支持手动授权码输入，用户在浏览器完成授权后手动复制授权码
@@ -25,13 +26,15 @@
 
 **User's Choice**: A
 
-**Resolution**: 
+**Resolution**:
+
 - OAuth 回调将通过 HTTP 传输模式的 `/oauth/callback` 端点接收
 - 需要在 HTTP 传输配置中添加 OAuth 回调路由
 - stdio 模式下，用户需要切换到 HTTP 模式进行授权，或者提示用户使用 HTTP 模式
 - 更新 FR-025 说明回调处理依赖 HTTP 传输模式
 
-**Applied To**: 
+**Applied To**:
+
 - User Story 2 (OAuth 认证管理)
 - FR-025 (feishu_auth_callback 工具)
 - 技术约束部分
@@ -47,6 +50,7 @@
 **Context**: 规范中提到需要上传本地文件（FR-004, FR-005），Markdown 中可能包含相对路径（`./image.png`）或绝对路径（`/Users/xxx/image.png`）的文件引用。
 
 **Options Presented**:
+
 - **A**: 要求用户提供工作目录参数，所有相对路径基于该目录解析
 - **B**: 如果传入文件路径，使用文件所在目录作为基准；如果传入内容，要求用户提供工作目录
 - **C**: 仅支持绝对路径，不支持相对路径
@@ -57,7 +61,8 @@
 
 **User's Choice**: B
 
-**Resolution**: 
+**Resolution**:
+
 - `feishu_upload_markdown` 工具接受两种输入方式：
   1. `filePath`: Markdown 文件路径 → 自动使用文件所在目录作为基准解析相对路径
   2. `content` + `workingDirectory`: Markdown 内容 + 工作目录 → 使用指定工作目录解析相对路径
@@ -65,7 +70,8 @@
 - 更新 FR-026 说明输入参数和路径解析规则
 - 在 MarkdownDocument 实体中添加 `baseDirectory` 属性
 
-**Applied To**: 
+**Applied To**:
+
 - User Story 1 (Markdown 文档转换)
 - User Story 3 (文件和图片上传)
 - FR-026 (feishu_upload_markdown 工具)
@@ -82,6 +88,7 @@
 **Context**: 规范中提到需要安全存储 OAuth tokens（FR-023），但没有明确说明如何处理多个飞书账号或多个应用的场景。
 
 **Options Presented**:
+
 - **A**: 单用户模式，全局只存储一套 App ID/Secret 和 tokens
 - **B**: 支持多应用配置，通过 App ID 作为标识符区分不同的认证信息
 - **C**: 支持多租户模式，每个 MCP 客户端会话独立管理自己的认证信息
@@ -92,7 +99,8 @@
 
 **User's Choice**: B
 
-**Resolution**: 
+**Resolution**:
+
 - 系统支持配置多个飞书应用，每个应用通过 App ID 唯一标识
 - 存储结构：`feishu_auth:{appId}` 存储对应的认证信息
 - 所有 MCP 工具接受可选的 `appId` 参数，未指定时使用默认应用
@@ -101,7 +109,8 @@
 - 更新 FR-008 说明支持多应用配置
 - 更新 FR-023 说明按 App ID 隔离存储
 
-**Applied To**: 
+**Applied To**:
+
 - User Story 2 (OAuth 认证管理)
 - FR-008 (配置管理)
 - FR-023 (Token 存储)
@@ -119,6 +128,7 @@
 **Context**: User Story 6 提到文档更新功能，但没有明确说明如何处理并发更新或内容冲突的情况。
 
 **Options Presented**:
+
 - **A**: 完全覆盖模式，直接用新内容替换整个文档，不检测冲突
 - **B**: 检测文档最后修改时间，如果文档在上次上传后被修改过，则拒绝更新并提示用户
 - **C**: 提供两种更新模式：覆盖模式和追加模式（在文档末尾追加新内容）
@@ -129,7 +139,8 @@
 
 **User's Choice**: B
 
-**Resolution**: 
+**Resolution**:
+
 - 系统在本地存储每个文档的最后上传时间戳（`lastUploadedAt`）
 - 更新文档前，先获取飞书文档的最后修改时间（`updatedAt`）
 - 如果 `updatedAt > lastUploadedAt`，说明文档在上次上传后被修改过
@@ -139,7 +150,8 @@
 - 在 FeishuDocument 实体中添加 `lastUploadedAt` 属性
 - 更新 User Story 6 的验收场景，添加冲突检测场景
 
-**Applied To**: 
+**Applied To**:
+
 - User Story 6 (文档更新和同步)
 - FR-027 (feishu_update_document 工具)
 - FeishuDocument 实体定义
@@ -156,6 +168,7 @@
 **Context**: 规范中提到需要实现频率限制控制（FR-009），feishushare 项目中有 RateLimitController 实现，但没有明确说明批量操作的处理策略。
 
 **Options Presented**:
+
 - **A**: 不支持批量操作，用户需要多次调用单文档上传工具
 - **B**: 提供批量上传工具，内部自动处理频率限制和错误隔离（单个文档失败不影响其他文档）
 - **C**: 支持批量操作，但要求用户自己控制调用频率
@@ -166,7 +179,8 @@
 
 **User's Choice**: B
 
-**Resolution**: 
+**Resolution**:
+
 - 添加 `feishu_batch_upload_markdown` 工具支持批量上传
 - 工具接受文档列表作为输入，每个文档包含独立的配置
 - 内部使用 RateLimitController 自动控制 API 调用频率
@@ -177,7 +191,8 @@
 - 添加 User Story 8 描述批量操作场景（Priority: P2）
 - 更新性能需求，说明批量操作的性能指标
 
-**Applied To**: 
+**Applied To**:
+
 - 新增 User Story 8 (批量文档上传)
 - FR-009 (频率限制控制)
 - 新增 FR-033 (批量上传工具)
@@ -188,19 +203,19 @@
 
 ## Summary
 
-| # | Question | Category | Choice | Applied To |
-|---|----------|----------|--------|------------|
-| 1 | OAuth 授权回调处理机制 | Integration | A | FR-025, 技术约束 |
-| 2 | 本地文件路径解析策略 | Domain & Data | B | FR-026, MarkdownDocument |
-| 3 | Token 存储和多用户支持 | Domain & Data | B | FR-008, FR-023, FR-031, FR-032 |
-| 4 | 文档更新策略和冲突处理 | Functional Scope | B | FR-027, User Story 6, Edge Cases |
-| 5 | 频率限制和批量操作策略 | Non-Functional | B | FR-009, 新增 FR-033, User Story 8 |
+| #   | Question               | Category         | Choice | Applied To                        |
+| --- | ---------------------- | ---------------- | ------ | --------------------------------- |
+| 1   | OAuth 授权回调处理机制 | Integration      | A      | FR-025, 技术约束                  |
+| 2   | 本地文件路径解析策略   | Domain & Data    | B      | FR-026, MarkdownDocument          |
+| 3   | Token 存储和多用户支持 | Domain & Data    | B      | FR-008, FR-023, FR-031, FR-032    |
+| 4   | 文档更新策略和冲突处理 | Functional Scope | B      | FR-027, User Story 6, Edge Cases  |
+| 5   | 频率限制和批量操作策略 | Non-Functional   | B      | FR-009, 新增 FR-033, User Story 8 |
 
 ---
 
 ## Impact on Specification
 
-- **Sections Modified**: 
+- **Sections Modified**:
   - User Story 2 (OAuth 认证)
   - User Story 6 (文档更新)
   - 新增 User Story 8 (批量上传)
@@ -211,13 +226,13 @@
   - Edge Cases
   - 性能需求
 
-- **New Requirements Added**: 
+- **New Requirements Added**:
   - FR-031: feishu_set_default_app 工具
   - FR-032: feishu_list_apps 工具
   - FR-033: feishu_batch_upload_markdown 工具
   - User Story 8: 批量文档上传
 
-- **Requirements Changed**: 
+- **Requirements Changed**:
   - FR-008: 添加多应用配置支持
   - FR-023: 添加按 App ID 隔离存储
   - FR-025: 明确 OAuth 回调依赖 HTTP 模式
