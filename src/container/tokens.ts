@@ -21,3 +21,9 @@ export const SurrealdbClient = Symbol('SurrealdbClient');
 export const SpeechService = Symbol('SpeechService');
 export const GraphService = Symbol('GraphService');
 export const TaskManagerToken = Symbol('TaskManager');
+
+// Feishu service tokens
+export const FeishuApiProviderToken = Symbol('FeishuApiProvider');
+export const FeishuMarkdownProcessorToken = Symbol('FeishuMarkdownProcessor');
+export const FeishuRateLimiterToken = Symbol('FeishuRateLimiter');
+export const FeishuServiceToken = Symbol('FeishuService');
