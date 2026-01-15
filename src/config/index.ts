@@ -255,6 +255,27 @@ const ConfigSchema = z.object({
         .optional(),
     })
     .optional(),
+  // 飞书服务配置
+  feishu: z
+    .object({
+      /** 默认应用 ID */
+      defaultAppId: z.string().optional(),
+      /** 默认应用密钥 */
+      defaultAppSecret: z.string().optional(),
+      /** OAuth 回调地址 */
+      oauthCallbackUrl: z.string().url().optional(),
+      /** API 基础地址 */
+      apiBaseUrl: z.string().url().default('https://open.feishu.cn/open-apis'),
+      /** 是否启用频率限制 */
+      rateLimitEnabled: z.coerce.boolean().default(true),
+      /** 最大重试次数 */
+      maxRetries: z.coerce.number().default(3),
+      /** 重试延迟（毫秒） */
+      retryDelayMs: z.coerce.number().default(1000),
+      /** 请求超时（毫秒） */
+      requestTimeoutMs: z.coerce.number().default(30000),
+    })
+    .optional(),
 });
 
 // --- Parsing Logic ---
@@ -376,6 +397,20 @@ const parseConfig = () => {
                   timeout: env.SPEECH_STT_TIMEOUT,
                 }
               : undefined,
+          }
+        : undefined,
+    // 飞书配置
+    feishu:
+      env.FEISHU_DEFAULT_APP_ID || env.FEISHU_OAUTH_CALLBACK_URL
+        ? {
+            defaultAppId: env.FEISHU_DEFAULT_APP_ID,
+            defaultAppSecret: env.FEISHU_DEFAULT_APP_SECRET,
+            oauthCallbackUrl: env.FEISHU_OAUTH_CALLBACK_URL,
+            apiBaseUrl: env.FEISHU_API_BASE_URL,
+            rateLimitEnabled: env.FEISHU_RATE_LIMIT_ENABLED,
+            maxRetries: env.FEISHU_MAX_RETRIES,
+            retryDelayMs: env.FEISHU_RETRY_DELAY_MS,
+            requestTimeoutMs: env.FEISHU_REQUEST_TIMEOUT_MS,
           }
         : undefined,
     // The following fields will be derived and are not directly from env
