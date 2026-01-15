@@ -189,11 +189,13 @@ export class WhisperProvider implements ISpeechProvider {
       const data: WhisperTranscriptionResponse = await response.json();
 
       // Convert word timestamps if present
-      const words: WordTimestamp[] | undefined = data.words?.map((w: { word: string; start: number; end: number }) => ({
-        word: w.word,
-        start: w.start,
-        end: w.end,
-      }));
+      const words: WordTimestamp[] | undefined = data.words?.map(
+        (w: { word: string; start: number; end: number }) => ({
+          word: w.word,
+          start: w.start,
+          end: w.end,
+        }),
+      );
 
       logger.info(
         `Speech-to-text transcription successful (${data.text.length} chars)`,

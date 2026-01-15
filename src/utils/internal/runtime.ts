@@ -47,7 +47,8 @@ const hasNodeVersion = (): boolean => {
  */
 const hasPerformanceNowFunction = (): boolean => {
   try {
-    const perf = (globalThis as unknown as { performance?: Performance }).performance;
+    const perf = (globalThis as unknown as { performance?: Performance })
+      .performance;
     return (
       typeof perf === 'object' &&
       perf !== null &&
