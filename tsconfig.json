@@ -45,7 +45,6 @@
     // Node.js specific
     "lib": ["ES2022"],
     "types": [
-      "bun-types",
       "node",
       "reflect-metadata",
       "@cloudflare/workers-types"

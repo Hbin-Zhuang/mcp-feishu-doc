@@ -1,154 +1,154 @@
-# Agent Protocol & Architectural Mandate
+# 代理协议与架构规范
 
-**Version:** 2.4.7
-**Target Project:** mcp-ts-template
-**Last Updated:** 2024-10-15
+**版本：** 2.4.7
+**目标项目：** mcp-ts-template
+**最后更新：** 2024-10-15
 
-This document defines the operational rules for contributing to this codebase. Follow it exactly.
+本文档定义了为此代码库做出贡献的操作规则。请严格遵循。
 
-> **Note on File Synchronization**: `AGENTS.md` is symlinked to CLAUDE.md & `.clinerules/AGENTS.md` for consistency. Only edit the root `AGENTS.md` file. You do not have permission edit, touch, or change in any way the `CLAUDE.md` or `.clinerules/AGENTS.md` files.
+> **文件同步说明**：`AGENTS.md` 被符号链接到 CLAUDE.md 和 `.clinerules/AGENTS.md` 以保持一致性。仅编辑根 `AGENTS.md` 文件。您无权编辑、触碰或以任何方式更改 `CLAUDE.md` 或 `.clinerules/AGENTS.md` 文件。
 
-> **Note for Developer**: Never assume anything. Always review related files, search for documentation, etc. when making changes. Always prefer reading the full file content to understand the full context. NEVER attempt to edit a file before reading the current content.
-
----
-
-## I. Core Principles (Non‑Negotiable)
-
-1.  **The Logic Throws, The Handler Catches**
-    - Implement pure, stateless logic in `ToolDefinition`/`ResourceDefinition` `logic` functions. No `try...catch` in logic.
-    - Throw `new McpError(...)` with appropriate `JsonRpcErrorCode` on failure.
-    - Handlers (`createMcpToolHandler`, `resourceHandlerFactory`) create `RequestContext`, measure execution, format responses, and catch errors.
-
-2.  **Full‑Stack Observability**
-    - OpenTelemetry preconfigured. Logs/errors auto-correlated to traces. `measureToolExecution` records duration, success, payload sizes, error codes.
-    - No manual instrumentation. Use provided utilities and structured logging. No direct console calls - use our logger.
-
-3.  **Structured, Traceable Operations**
-    - Logic receives `appContext` (logging/tracing) and `sdkContext` (Elicitation, Sampling, Roots operations).
-    - Pass same `appContext` through call stack. Use global `logger` with `appContext` in every log.
-
-4.  **Decoupled Storage**
-    - Never access persistence backends directly. Always use DI-injected `StorageService`.
-    - `StorageService` provides built-in validation, opaque cursor pagination, and parallel batch operations.
-    - All inputs (tenant IDs, keys, prefixes) are validated before reaching providers.
-
-5.  **Local ↔ Edge Runtime Parity**
-    - All features work with local transports (`stdio`/`http`) and Worker bundle (`build:worker` + `wrangler`).
-    - Guard non-portable deps. Prefer runtime-agnostic abstractions (Hono + `@hono/mcp`, Fetch APIs).
-
-6.  **Use Elicitation for Missing Input**
-    - Use `sdkContext.elicitInput()` for missing params. See `template_madlibs_elicitation.tool.ts`.
+> **开发者注意事项**：永远不要假设任何事情。在进行更改时，始终审查相关文件、搜索文档等。始终优先阅读完整文件内容以理解完整上下文。在阅读当前内容之前，永远不要尝试编辑文件。
 
 ---
 
-## II. Architectural Overview & Directory Structure
+## I. 核心原则（不可协商）
 
-> **📁 Repository Structure Reference**: For a complete visual tree of the codebase, see [docs/tree.md](docs/tree.md). This will help you understand the full directory layout and where to place your code.
+1.  **逻辑抛出，处理器捕获**
+    - 在 `ToolDefinition`/`ResourceDefinition` `logic` 函数中实现纯无状态逻辑。逻辑中不使用 `try...catch`。
+    - 失败时抛出 `new McpError(...)` 并附带适当的 `JsonRpcErrorCode`。
+    - 处理器（`createMcpToolHandler`、`resourceHandlerFactory`）创建 `RequestContext`，测量执行时间，格式化响应，并捕获错误。
+
+2.  **全栈可观测性**
+    - OpenTelemetry 已预配置。日志/错误自动关联到跟踪。`measureToolExecution` 记录持续时间、成功状态、负载大小、错误代码。
+    - 无需手动检测。使用提供的工具和结构化日志记录。不要直接调用 console - 使用我们的 logger。
+
+3.  **结构化、可跟踪的操作**
+    - 逻辑接收 `appContext`（日志记录/跟踪）和 `sdkContext`（引导、采样、根操作）。
+    - 通过调用堆栈传递相同的 `appContext`。在每个日志中使用带有 `appContext` 的全局 `logger`。
+
+4.  **解耦存储**
+    - 永远不要直接访问持久化后端。始终使用 DI 注入的 `StorageService`。
+    - `StorageService` 提供内置验证、不透明游标分页和并行批处理操作。
+    - 所有输入（租户 ID、密钥、前缀）在到达提供者之前都会经过验证。
+
+5.  **本地 ↔ 边缘运行时对等**
+    - 所有功能都适用于本地传输（`stdio`/`http`）和 Worker 包（`build:worker` + `wrangler`）。
+    - 保护不可移植的依赖。优先使用运行时无关的抽象（Hono + `@hono/mcp`、Fetch API）。
+
+6.  **使用引导获取缺失输入**
+    - 对缺失的参数使用 `sdkContext.elicitInput()`。参见 `template_madlibs_elicitation.tool.ts`。
+
+---
+
+## II. 架构概述与目录结构
+
+> **📁 仓库结构参考**：有关代码库的完整可视化树，请参阅 [docs/tree.md](docs/tree.md)。这将帮助您了解完整的目录布局以及放置代码的位置。
 >
-> **⚠️ Architectural Discipline**: ALWAYS respect the established directory structure. New services go in `src/services/`, new tools in `src/mcp-server/tools/definitions/`, etc. Do not create top-level directories or place code in non-standard locations.
+> **⚠️ 架构纪律**：始终尊重已建立的目录结构。新服务放在 `src/services/`，新工具放在 `src/mcp-server/tools/definitions/` 等。不要创建顶级目录或将代码放在非标准位置。
 
-Separation of concerns maps directly to the filesystem. Always place files in their designated locations.
+关注点分离直接映射到文件系统。始终将文件放在其指定位置。
 
-| Directory                                   | Purpose & Guidance                                                                                                                                                                                                                                                                                                                |
+| 目录                                   | 用途与指导                                                                                                                                                                                                                                                                                                                |
 | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`src/mcp-server/tools/definitions/`**     | **MCP Tool definitions.** Add new capabilities here as `[tool-name].tool.ts`. Follow the **Tool Development Workflow**.                                                                                                                                                                                                           |
-| **`src/mcp-server/resources/definitions/`** | **MCP Resource definitions.** Add data sources or contexts as `[resource-name].resource.ts`. Follow the **Resource Development Workflow**.                                                                                                                                                                                        |
-| **`src/mcp-server/tools/utils/`**           | **Shared tool utilities:** Core tool infrastructure (`ToolDefinition`, `toolHandlerFactory`)                                                                                                                                                                                                                                      |
-| **`src/mcp-server/resources/utils/`**       | **Shared resource utilities,** including `ResourceDefinition` and resource handler factory.                                                                                                                                                                                                                                       |
-| **`src/mcp-server/tasks/`**                 | **Tasks API infrastructure (experimental).** Contains `TaskManager`, `TaskToolDefinition`, and type re-exports from SDK. Task tool definitions go in `tools/definitions/` with `.task-tool.ts` suffix.                                                                                                                            |
-| **`src/mcp-server/transports/`**            | **Transport implementations:**<br>- `http/` (Hono + `@hono/mcp` Streamable HTTP)<br>- `stdio/` (MCP spec stdio transport)<br>- `auth/` (strategies and helpers). HTTP mode can enforce JWT or OAuth. Stdio mode should not implement HTTP-based auth.                                                                             |
-| **`src/services/`**                         | **External service integrations** following a consistent domain-driven pattern:<br>- Each service domain (e.g., `llm/`, `speech/`) contains: `core/` (interfaces, orchestrators), `providers/` (implementations), `types.ts`, and `index.ts`<br>- Use DI for all service dependencies. See **Service Development Pattern** below. |
-| **`src/storage/`**                          | **Abstractions and provider implementations** (in-memory, filesystem, supabase, surrealdb, cloudflare-r2, cloudflare-kv).                                                                                                                                                                                                         |
-| **`src/container/`**                        | **Dependency Injection (`tsyringe`).** Service registration and tokens.                                                                                                                                                                                                                                                           |
-| **`src/utils/`**                            | **Global utilities.** Includes logging, performance, parsing, network, security, formatting, and telemetry. Note: The error handling module is located at `src/utils/internal/error-handler/`.                                                                                                                                    |
-| **`tests/`**                                | **Unit/integration tests.** Mirrors `src/` for easy navigation and includes compliance suites.                                                                                                                                                                                                                                    |
+| **`src/mcp-server/tools/definitions/`**     | **MCP 工具定义。** 在此处添加新功能，文件名为 `[tool-name].tool.ts`。遵循 **工具开发工作流程**。                                                                                                                                                                                                           |
+| **`src/mcp-server/resources/definitions/`** | **MCP 资源定义。** 添加数据源或上下文，文件名为 `[resource-name].resource.ts`。遵循 **资源开发工作流程**。                                                                                                                                                                                        |
+| **`src/mcp-server/tools/utils/`**           | **共享工具实用程序：** 核心工具基础设施（`ToolDefinition`、`toolHandlerFactory`）                                                                                                                                                                                                                                      |
+| **`src/mcp-server/resources/utils/`**       | **共享资源实用程序，** 包括 `ResourceDefinition` 和资源处理器工厂。                                                                                                                                                                                                                                       |
+| **`src/mcp-server/tasks/`**                 | **Tasks API 基础设施（实验性）。** 包含 `TaskManager`、`TaskToolDefinition` 和来自 SDK 的类型重新导出。任务工具定义放在 `tools/definitions/` 中，后缀为 `.task-tool.ts`。                                                                                                                            |
+| **`src/mcp-server/transports/`**            | **传输实现：**<br>- `http/`（Hono + `@hono/mcp` Streamable HTTP）<br>- `stdio/`（MCP 规范 stdio 传输）<br>- `auth/`（策略和辅助函数）。HTTP 模式可以强制执行 JWT 或 OAuth。Stdio 模式不应实现基于 HTTP 的身份验证。                                                                             |
+| **`src/services/`**                         | **外部服务集成** 遵循一致的领域驱动模式：<br>- 每个服务域（例如，`llm/`、`speech/`）包含：`core/`（接口、编排器）、`providers/`（实现）、`types.ts` 和 `index.ts`<br>- 对所有服务依赖使用 DI。参见下面的 **服务开发模式**。 |
+| **`src/storage/`**                          | **抽象和提供者实现**（内存、文件系统、supabase、surrealdb、cloudflare-r2、cloudflare-kv）。                                                                                                                                                                                                         |
+| **`src/container/`**                        | **依赖注入（`tsyringe`）。** 服务注册和令牌。                                                                                                                                                                                                                                                           |
+| **`src/utils/`**                            | **全局实用程序。** 包括日志记录、性能、解析、网络、安全、格式化和遥测。注意：错误处理模块位于 `src/utils/internal/error-handler/`。                                                                                                                                    |
+| **`tests/`**                                | **单元/集成测试。** 镜像 `src/` 以便于导航，包括合规性套件。                                                                                                                                                                                                                                    |
 
 ---
 
-## III. Architectural Philosophy: Pragmatic SOLID
+## III. 架构理念：实用的 SOLID
 
-- **Single Responsibility:** Group code that changes together.
-- **Open/Closed:** Prefer extension via abstractions (interfaces, plugins/middleware).
-- **Liskov Substitution:** Subtypes must be substitutable without surprises.
-- **Interface Segregation:** Keep interfaces small and focused.
-- **Dependency Inversion:** Depend on abstractions (DI-managed services).
+- **单一职责：** 将一起更改的代码分组。
+- **开闭原则：** 优先通过抽象（接口、插件/中间件）进行扩展。
+- **里氏替换：** 子类型必须可以替换而不会产生意外。
+- **接口隔离：** 保持接口小而专注。
+- **依赖倒置：** 依赖于抽象（DI 管理的服务）。
 
-**Complementary principles:**
+**补充原则：**
 
-- **KISS:** Favor simplicity.
-- **YAGNI:** Don’t build what you don’t need yet.
-- **Composition over Inheritance:** Prefer composable modules.
+- **KISS：** 优先简单性。
+- **YAGNI：** 不要构建您还不需要的东西。
+- **组合优于继承：** 优先使用可组合的模块。
 
 ---
 
-## IV. Tool & Resource Development Workflow
+## IV. 工具和资源开发工作流程
 
-**Common Steps (Tools & Resources):**
+**通用步骤（工具和资源）：**
 
-1. **File Location**
-   - **Tools:** `src/mcp-server/tools/definitions/[tool-name].tool.ts` (template: `template-echo-message.tool.ts`)
-   - **Resources:** `src/mcp-server/resources/definitions/[resource-name].resource.ts` (template: `echo.resource.ts`)
+1. **文件位置**
+   - **工具：** `src/mcp-server/tools/definitions/[tool-name].tool.ts`（模板：`template-echo-message.tool.ts`）
+   - **资源：** `src/mcp-server/resources/definitions/[resource-name].resource.ts`（模板：`echo.resource.ts`）
 
-2. **Define the ToolDefinition or ResourceDefinition**
-   - Export single `const` of type `ToolDefinition<InputSchema, OutputSchema>` or `ResourceDefinition<ParamsSchema, OutputSchema>` with:
-     - `name`, `title` (opt), `description`: Clear, LLM-facing descriptions
-     - **Tools:** `inputSchema`/`outputSchema` as `z.object()`. **All fields need `.describe()`**.
-     - **Resources:** `paramsSchema`/`outputSchema`, `uriTemplate`, `mimeType` (opt), `examples` (opt), `list()` (opt)
-     - `logic`: Pure business logic function. No `try/catch`. Throw `McpError` on failure.
-       - **Tools:** `async (input, appContext, sdkContext) => { ... }`
-       - **Resources:** `(uri, params, context) => { ... }` (can be `async`)
-     - `annotations` (opt): UI hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
-     - `responseFormatter` (opt): Map result to `ContentBlock[]`. Default: JSON string.
+2. **定义 ToolDefinition 或 ResourceDefinition**
+   - 导出类型为 `ToolDefinition<InputSchema, OutputSchema>` 或 `ResourceDefinition<ParamsSchema, OutputSchema>` 的单个 `const`，包含：
+     - `name`、`title`（可选）、`description`：清晰的面向 LLM 的描述
+     - **工具：** `inputSchema`/`outputSchema` 作为 `z.object()`。**所有字段都需要 `.describe()`**。
+     - **资源：** `paramsSchema`/`outputSchema`、`uriTemplate`、`mimeType`（可选）、`examples`（可选）、`list()`（可选）
+     - `logic`：纯业务逻辑函数。不使用 `try/catch`。失败时抛出 `McpError`。
+       - **工具：** `async (input, appContext, sdkContext) => { ... }`
+       - **资源：** `(uri, params, context) => { ... }`（可以是 `async`）
+     - `annotations`（可选）：UI 提示（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）
+     - `responseFormatter`（可选）：将结果映射到 `ContentBlock[]`。默认：JSON 字符串。
 
-3. **Apply Authorization**
-   - Wrap `logic` with `withToolAuth` or `withResourceAuth`:
+3. **应用授权**
+   - 使用 `withToolAuth` 或 `withResourceAuth` 包装 `logic`：
      ```ts
      import { withToolAuth } from '@/mcp-server/transports/auth/lib/withAuth.js';
      logic: withToolAuth(['tool:echo:read'], yourLogic),
      ```
 
-4. **Register via Barrel Export**
-   - **Tools:** Add to `src/mcp-server/tools/definitions/index.ts` → `allToolDefinitions`
-   - **Resources:** Add to `src/mcp-server/resources/definitions/index.ts` → `allResourceDefinitions`
+4. **通过桶导出注册**
+   - **工具：** 添加到 `src/mcp-server/tools/definitions/index.ts` → `allToolDefinitions`
+   - **资源：** 添加到 `src/mcp-server/resources/definitions/index.ts` → `allResourceDefinitions`
 
-**Resource-Specific Notes:**
+**资源特定说明：**
 
-- Resources use `uriTemplate` (e.g., `echo://{message}`), `paramsSchema`, and optional `list()` for discovery
-- Logic signature: `(uri: URL, params, context) => result` (can be `async`)
-- See `echo.resource.ts` and Section IV.A for complete examples
+- 资源使用 `uriTemplate`（例如，`echo://{message}`）、`paramsSchema` 和可选的 `list()` 进行发现
+- 逻辑签名：`(uri: URL, params, context) => result`（可以是 `async`）
+- 参见 `echo.resource.ts` 和章节 IV.A 获取完整示例
 
-**Resource Pagination:** Resources returning large lists must implement pagination per [MCP spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/utils/pagination). Use `extractCursor(meta)`, `paginateArray(...)` from `@/utils/index.js`. Storage providers: use `encodeCursor`/`decodeCursor` from `@/storage/core/storageValidation.js` for tenant-bound cursors. Cursors are opaque; invalid cursors → `JsonRpcErrorCode.InvalidParams` (-32602). Include `nextCursor` only when more results exist.
-
----
-
-## IV.A. Quick Start: Creating Your First Tool
-
-- [ ] **1. Study template:** [template-echo-message.tool.ts](src/mcp-server/tools/definitions/template-echo-message.tool.ts) — understand: metadata → schemas → logic → export
-- [ ] **2. Create file:** `src/mcp-server/tools/definitions/[your-tool-name].tool.ts` (kebab-case)
-- [ ] **3. Define metadata:** `TOOL_NAME` (snake_case), `TOOL_TITLE`, `TOOL_DESCRIPTION` (LLM-facing), `TOOL_ANNOTATIONS` (readOnly/idempotent hints)
-- [ ] **4. Create schemas:** `InputSchema`/`OutputSchema` as `z.object()` — **CRITICAL:** all fields need `.describe()`
-- [ ] **5. Implement logic:** Pure function `async (input, appContext, sdkContext) => result` — NO try/catch, throw `McpError` on failure
-- [ ] **6. (Optional) Response formatter:** `(result) => ContentBlock[]`
-- [ ] **7. Apply auth:** Wrap with `withToolAuth(['tool:name:read'], yourLogic)`
-- [ ] **8. Export ToolDefinition:** Combine metadata, schemas, logic, formatter
-- [ ] **9. Register:** Add to `allToolDefinitions` in [index.ts](src/mcp-server/tools/definitions/index.ts)
-- [ ] **10. Quality check:** `bun run devcheck`
-- [ ] **11. Test:** `bun run dev:stdio` or `dev:http`, verify with MCP client
-
-See Section IV for full workflow, Section XIV for comprehensive checklist.
+**资源分页：** 返回大型列表的资源必须按照 [MCP 规范 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/utils/pagination) 实现分页。使用来自 `@/utils/index.js` 的 `extractCursor(meta)`、`paginateArray(...)`。存储提供者：使用来自 `@/storage/core/storageValidation.js` 的 `encodeCursor`/`decodeCursor` 用于租户绑定的游标。游标是不透明的；无效游标 → `JsonRpcErrorCode.InvalidParams` (-32602)。仅当存在更多结果时才包含 `nextCursor`。
 
 ---
 
-## IV.B. Quick Start: Creating a Task Tool (Experimental)
+## IV.A. 快速开始：创建您的第一个工具
 
-Task tools enable long-running async operations using the MCP Tasks API. They follow a "call-now, fetch-later" pattern where clients can poll for status and retrieve results after completion.
+- [ ] **1. 研究模板：** [template-echo-message.tool.ts](src/mcp-server/tools/definitions/template-echo-message.tool.ts) — 理解：元数据 → 模式 → 逻辑 → 导出
+- [ ] **2. 创建文件：** `src/mcp-server/tools/definitions/[your-tool-name].tool.ts`（kebab-case）
+- [ ] **3. 定义元数据：** `TOOL_NAME`（snake_case）、`TOOL_TITLE`、`TOOL_DESCRIPTION`（面向 LLM）、`TOOL_ANNOTATIONS`（readOnly/idempotent 提示）
+- [ ] **4. 创建模式：** `InputSchema`/`OutputSchema` 作为 `z.object()` — **关键：** 所有字段都需要 `.describe()`
+- [ ] **5. 实现逻辑：** 纯函数 `async (input, appContext, sdkContext) => result` — 不使用 try/catch，失败时抛出 `McpError`
+- [ ] **6. （可选）响应格式化器：** `(result) => ContentBlock[]`
+- [ ] **7. 应用身份验证：** 使用 `withToolAuth(['tool:name:read'], yourLogic)` 包装
+- [ ] **8. 导出 ToolDefinition：** 组合元数据、模式、逻辑、格式化器
+- [ ] **9. 注册：** 添加到 [index.ts](src/mcp-server/tools/definitions/index.ts) 中的 `allToolDefinitions`
+- [ ] **10. 质量检查：** `npm run typecheck && npm run lint`
+- [ ] **11. 测试：** `npm run dev:stdio` 或 `dev:http`，使用 MCP 客户端验证
 
-> **Note:** Tasks API is experimental (SDK 1.24+) and may change without notice.
+参见章节 IV 获取完整工作流程，章节 XIV 获取全面检查清单。
 
-- [ ] **1. Study template:** [template-async-countdown.task-tool.ts](src/mcp-server/tools/definitions/template-async-countdown.task-tool.ts)
-- [ ] **2. Create file:** `src/mcp-server/tools/definitions/[name].task-tool.ts` (note: `.task-tool.ts` suffix)
-- [ ] **3. Define schemas:** `InputSchema` and optional `OutputSchema`
-- [ ] **4. Implement task handlers:**
+---
+
+## IV.B. 快速开始：创建任务工具（实验性）
+
+任务工具使用 MCP Tasks API 启用长时间运行的异步操作。它们遵循"立即调用，稍后获取"模式，客户端可以轮询状态并在完成后检索结果。
+
+> **注意：** Tasks API 是实验性的（SDK 1.24+），可能会在没有通知的情况下更改。
+
+- [ ] **1. 研究模板：** [template-async-countdown.task-tool.ts](src/mcp-server/tools/definitions/template-async-countdown.task-tool.ts)
+- [ ] **2. 创建文件：** `src/mcp-server/tools/definitions/[name].task-tool.ts`（注意：`.task-tool.ts` 后缀）
+- [ ] **3. 定义模式：** `InputSchema` 和可选的 `OutputSchema`
+- [ ] **4. 实现任务处理器：**
   ```typescript
   taskHandlers: {
     createTask: async (args, extra) => {
@@ -164,99 +164,99 @@ Task tools enable long-running async operations using the MCP Tasks API. They fo
     }
   }
   ```
-- [ ] **5. Set execution mode:** `execution: { taskSupport: 'required' }` or `'optional'`
-- [ ] **6. Export as `TaskToolDefinition`:** Import from `@/mcp-server/tasks/index.js`
-- [ ] **7. Register:** Add to `allToolDefinitions` in [index.ts](src/mcp-server/tools/definitions/index.ts)
+- [ ] **5. 设置执行模式：** `execution: { taskSupport: 'required' }` 或 `'optional'`
+- [ ] **6. 导出为 `TaskToolDefinition`：** 从 `@/mcp-server/tasks/index.js` 导入
+- [ ] **7. 注册：** 添加到 [index.ts](src/mcp-server/tools/definitions/index.ts) 中的 `allToolDefinitions`
 
-**Key Concepts:**
+**关键概念：**
 
-- `RequestTaskStore` provides `createTask`, `getTask`, `storeTaskResult`, `getTaskResult`, `updateTaskStatus`
-- Background work updates status via `taskStore.updateTaskStatus(taskId, 'working', 'message...')`
-- Terminal states: `completed`, `failed`, `cancelled` — use `storeTaskResult` for completion
-- Task tools are auto-detected by `isTaskToolDefinition()` and registered via `server.experimental.tasks.registerToolTask()`
-
----
-
-## V. Service Development Pattern
-
-> **All services:** `src/services/[service-name]/` with `core/` (interfaces), `providers/` (impls), `types.ts`, `index.ts`. See [docs/tree.md](docs/tree.md).
-
-**Patterns:** Single-provider (e.g., LLM) → direct DI `@inject(LlmProvider)`. Multi-provider (e.g., Speech) → create orchestrator for routing/aggregation.
-
-**Provider requirements:** Implement `I<Service>Provider`, `@injectable()`, `healthCheck()`, throw `McpError` on failure, name as `<name>.provider.ts` (kebab-case).
-
-**Add service:** Dir structure → Interface → Providers → Types → Barrel export → DI token (`tokens.ts`) → Register (`registrations/core.ts`)
+- `RequestTaskStore` 提供 `createTask`、`getTask`、`storeTaskResult`、`getTaskResult`、`updateTaskStatus`
+- 后台工作通过 `taskStore.updateTaskStatus(taskId, 'working', 'message...')` 更新状态
+- 终端状态：`completed`、`failed`、`cancelled` — 使用 `storeTaskResult` 完成
+- 任务工具由 `isTaskToolDefinition()` 自动检测，并通过 `server.experimental.tasks.registerToolTask()` 注册
 
 ---
 
-## VI. Core Services & Utilities
+## V. 服务开发模式
 
-#### DI-Managed Services (tokens in `src/container/tokens.ts`)
+> **所有服务：** `src/services/[service-name]/` 包含 `core/`（接口）、`providers/`（实现）、`types.ts`、`index.ts`。参见 [docs/tree.md](docs/tree.md)。
 
-| Service           | Token                   | Usage                                                                   | Notes                          |
+**模式：** 单提供者（例如，LLM）→ 直接 DI `@inject(LlmProvider)`。多提供者（例如，Speech）→ 创建编排器进行路由/聚合。
+
+**提供者要求：** 实现 `I<Service>Provider`、`@injectable()`、`healthCheck()`，失败时抛出 `McpError`，命名为 `<name>.provider.ts`（kebab-case）。
+
+**添加服务：** 目录结构 → 接口 → 提供者 → 类型 → 桶导出 → DI 令牌（`tokens.ts`）→ 注册（`registrations/core.ts`）
+
+---
+
+## VI. 核心服务与实用程序
+
+#### DI 管理的服务（`src/container/tokens.ts` 中的令牌）
+
+| 服务           | 令牌                   | 用法                                                                   | 说明                          |
 | ----------------- | ----------------------- | ----------------------------------------------------------------------- | ------------------------------ |
 | `ILlmProvider`    | `LlmProvider`           | `@inject(LlmProvider) private llmProvider: ILlmProvider`                |                                |
-| `IGraphProvider`  | `GraphProvider`         | `@inject(GraphProvider) private graphProvider: IGraphProvider`          | Only when using graph features |
-| `StorageService`  | `StorageService`        | `@inject(StorageService) private storage: StorageService`               | Requires `context.tenantId`    |
+| `IGraphProvider`  | `GraphProvider`         | `@inject(GraphProvider) private graphProvider: IGraphProvider`          | 仅在使用图功能时 |
+| `StorageService`  | `StorageService`        | `@inject(StorageService) private storage: StorageService`               | 需要 `context.tenantId`    |
 | `RateLimiter`     | `RateLimiterService`    | `@inject(RateLimiterService) private rateLimiter: RateLimiter`          |                                |
-| `Logger`          | `Logger`                | `@inject(Logger) private logger: typeof logger`                         | Pino-backed singleton          |
-| App Config        | `AppConfig`             | `@inject(AppConfig) private config: typeof configModule`                |                                |
-| Supabase Client   | `SupabaseAdminClient`   | `@inject(SupabaseAdminClient) private client: SupabaseClient<Database>` | Only when needed               |
-| SurrealDB Client  | `SurrealdbClient`       | `@inject(SurrealdbClient) private client: Surreal`                      | Only when needed               |
-| Transport Manager | `TransportManagerToken` | `@inject(TransportManagerToken) private tm: TransportManager`           |                                |
+| `Logger`          | `Logger`                | `@inject(Logger) private logger: typeof logger`                         | 基于 Pino 的单例          |
+| 应用配置        | `AppConfig`             | `@inject(AppConfig) private config: typeof configModule`                |                                |
+| Supabase 客户端   | `SupabaseAdminClient`   | `@inject(SupabaseAdminClient) private client: SupabaseClient<Database>` | 仅在需要时               |
+| SurrealDB 客户端  | `SurrealdbClient`       | `@inject(SurrealdbClient) private client: Surreal`                      | 仅在需要时               |
+| 传输管理器 | `TransportManagerToken` | `@inject(TransportManagerToken) private tm: TransportManager`           |                                |
 
-**Graph Service:** Graph operations (relationships, traversals, pathfinding) via SurrealDB. Inject `IGraphProvider`. Operations: `relate()`, `unrelate()`, `traverse()`, `shortestPath()`, `get{Outgoing|Incoming}Edges()`, `pathExists()`.
+**图服务：** 通过 SurrealDB 进行图操作（关系、遍历、路径查找）。注入 `IGraphProvider`。操作：`relate()`、`unrelate()`、`traverse()`、`shortestPath()`、`get{Outgoing|Incoming}Edges()`、`pathExists()`。
 
-**Storage:** `STORAGE_PROVIDER_TYPE` = `in-memory` | `filesystem` | `supabase` | `surrealdb` | `cloudflare-r2/kv`. Use DI-injected `StorageService`. Features: input validation, parallel batch ops (`getMany/setMany/deleteMany`), secure tenant-bound pagination, TTL support. See [storage docs](src/storage/README.md). SurrealDB: init schema via `docs/surrealdb-schema.surql`.
+**存储：** `STORAGE_PROVIDER_TYPE` = `in-memory` | `filesystem` | `supabase` | `surrealdb` | `cloudflare-r2/kv`。使用 DI 注入的 `StorageService`。功能：输入验证、并行批处理操作（`getMany/setMany/deleteMany`）、安全的租户绑定分页、TTL 支持。参见 [存储文档](src/storage/README.md)。SurrealDB：通过 `docs/surrealdb-schema.surql` 初始化架构。
 
-#### Directly Imported Utilities (`src/utils/`)
+#### 直接导入的实用程序（`src/utils/`）
 
-- `logger`, `requestContextService`, `sanitization`, `fetchWithTimeout`, `measureToolExecution`, `pdfParser`, `frontmatterParser`, `markdown()`, `diffFormatter`, `tableFormatter`, `treeFormatter` from `@/utils/index.js`
-- `ErrorHandler.tryCatch` (for services/setup code, NOT tool/resource logic)
+- 从 `@/utils/index.js` 导入：`logger`、`requestContextService`、`sanitization`、`fetchWithTimeout`、`measureToolExecution`、`pdfParser`、`frontmatterParser`、`markdown()`、`diffFormatter`、`tableFormatter`、`treeFormatter`
+- `ErrorHandler.tryCatch`（用于服务/设置代码，不用于工具/资源逻辑）
 
-**Response Formatters:** Simple: `[{ type: 'text', text: lines.join('\n') }]`. Complex: `markdown()` helper, `diffFormatter`, `tableFormatter`, `treeFormatter` (see `template-echo-message.tool.ts`)
+**响应格式化器：** 简单：`[{ type: 'text', text: lines.join('\n') }]`。复杂：`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`（参见 `template-echo-message.tool.ts`）
 
-#### Utils Modules (`src/utils/`)
+#### 实用程序模块（`src/utils/`）
 
-| Module        | Key Exports                                                                                                           |
+| 模块        | 主要导出                                                                                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `parsing/`    | `csvParser`, `yamlParser`, `xmlParser`, `jsonParser`, `pdfParser`, `frontmatterParser` (handles LLM `<think>` blocks) |
-| `formatting/` | `MarkdownBuilder`, `markdown()` helper, `diffFormatter`, `tableFormatter`, `treeFormatter`                            |
-| `security/`   | `sanitization`, `rateLimiter`, `idGenerator`                                                                          |
+| `parsing/`    | `csvParser`、`yamlParser`、`xmlParser`、`jsonParser`、`pdfParser`、`frontmatterParser`（处理 LLM `<think>` 块） |
+| `formatting/` | `MarkdownBuilder`、`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`                            |
+| `security/`   | `sanitization`、`rateLimiter`、`idGenerator`                                                                          |
 | `network/`    | `fetchWithTimeout`                                                                                                    |
-| `scheduling/` | `scheduler` (node-cron wrapper)                                                                                       |
-| `internal/`   | `logger`, `requestContextService`, `ErrorHandler`, `performance`                                                      |
-| `telemetry/`  | OpenTelemetry instrumentation                                                                                         |
+| `scheduling/` | `scheduler`（node-cron 包装器）                                                                                       |
+| `internal/`   | `logger`、`requestContextService`、`ErrorHandler`、`performance`                                                      |
+| `telemetry/`  | OpenTelemetry 检测                                                                                         |
 
 ---
 
-## VII. Authentication & Authorization
+## VII. 身份验证与授权
 
-**HTTP:** `MCP_AUTH_MODE` = `none` | `jwt` | `oauth`. JWT: local secret (`MCP_AUTH_SECRET_KEY`), dev bypasses if missing. OAuth: JWKS verification (`OAUTH_ISSUER_URL`, `OAUTH_AUDIENCE`, opt `OAUTH_JWKS_URI`). Claims: `clientId` (cid/client_id), `scopes` (scp/scope), `sub`, `tenantId` (tid → context.tenantId). Wrap logic with `withToolAuth`/`withResourceAuth` (defaults allowed if auth disabled).
+**HTTP：** `MCP_AUTH_MODE` = `none` | `jwt` | `oauth`。JWT：本地密钥（`MCP_AUTH_SECRET_KEY`），如果缺失则开发模式绕过。OAuth：JWKS 验证（`OAUTH_ISSUER_URL`、`OAUTH_AUDIENCE`，可选 `OAUTH_JWKS_URI`）。声明：`clientId`（cid/client_id）、`scopes`（scp/scope）、`sub`、`tenantId`（tid → context.tenantId）。使用 `withToolAuth`/`withResourceAuth` 包装逻辑（如果禁用身份验证，则允许默认值）。
 
-**STDIO:** No HTTP auth. Host handles authorization.
+**STDIO：** 无 HTTP 身份验证。主机处理授权。
 
-**Endpoints:** `/healthz`, `GET /mcp` unprotected. `POST`/`OPTIONS /mcp` protected when auth enabled. CORS: `MCP_ALLOWED_ORIGINS` or `*`.
-
----
-
-## VIII. Transports & Server Lifecycle
-
-**`createMcpServerInstance`** (`server.ts`): Init context, create server with capabilities (logging, listChanged, elicitation, sampling, prompts, roots), register via DI. **`TransportManager`** (`transports/manager.ts`): Resolve factory, instantiate transport, handle lifecycle. **Worker** (`worker.ts`): Cloudflare adapter, `serverless` flag.
+**端点：** `/healthz`、`GET /mcp` 不受保护。启用身份验证时，`POST`/`OPTIONS /mcp` 受保护。CORS：`MCP_ALLOWED_ORIGINS` 或 `*`。
 
 ---
 
-## IX. Code Style, Validation, and Security
+## VIII. 传输与服务器生命周期
 
-**JSDoc:** `@fileoverview`, `@module` required. **Validation:** Zod schemas, all fields need `.describe()`. **Logging:** Include `RequestContext`, use `logger.{debug|info|notice|warning|error|crit|emerg}`. **Errors:** Logic throws `McpError`, handlers catch. `ErrorHandler.tryCatch` for services only. **Secrets:** `src/config/index.ts` only. **Rate Limiting:** DI-injected `RateLimiter`. **Telemetry:** Auto-init, no manual spans.
+**`createMcpServerInstance`**（`server.ts`）：初始化上下文，创建具有功能（日志记录、listChanged、引导、采样、提示、根）的服务器，通过 DI 注册。**`TransportManager`**（`transports/manager.ts`）：解析工厂，实例化传输，处理生命周期。**Worker**（`worker.ts`）：Cloudflare 适配器，`serverless` 标志。
 
 ---
 
-## IX.A. Git Commit Messages
+## IX. 代码风格、验证和安全
 
-**CRITICAL:** When creating git commits, NEVER use heredoc syntax (`cat <<'EOF'`) or command substitution (`$(...)`) in commit messages. Use plain strings only.
+**JSDoc：** 需要 `@fileoverview`、`@module`。**验证：** Zod 模式，所有字段都需要 `.describe()`。**日志记录：** 包含 `RequestContext`，使用 `logger.{debug|info|notice|warning|error|crit|emerg}`。**错误：** 逻辑抛出 `McpError`，处理器捕获。`ErrorHandler.tryCatch` 仅用于服务。**密钥：** 仅在 `src/config/index.ts` 中。**速率限制：** DI 注入的 `RateLimiter`。**遥测：** 自动初始化，无手动跨度。
 
-**Correct:**
+---
+
+## IX.A. Git 提交消息
+
+**关键：** 创建 git 提交时，永远不要在提交消息中使用 heredoc 语法（`cat <<'EOF'`）或命令替换（`$(...)`）。仅使用纯字符串。
+
+**正确：**
 
 ```bash
 git commit -m "feat(auth): add JWT validation middleware
@@ -266,83 +266,84 @@ git commit -m "feat(auth): add JWT validation middleware
 - Includes comprehensive error handling"
 ```
 
-**INCORRECT - NEVER DO THIS:**
+**错误 - 永远不要这样做：**
 
 ```bash
-# ❌ WRONG - Do not use cat/heredoc/command substitution
+# ❌ 错误 - 不要使用 cat/heredoc/命令替换
 git commit -m "$(cat <<'EOF'
 feat(auth): add JWT validation
 EOF
 )"
 ```
 
-**Conventional Commits Format:** Use the [Conventional Commits](https://www.conventionalcommits.org/) standard:
+**Conventional Commits 格式：** 使用 [Conventional Commits](https://www.conventionalcommits.org/) 标准：
 
-- `feat(scope): description` - New feature
-- `fix(scope): description` - Bug fix
-- `refactor(scope): description` - Code refactoring
-- `chore(scope): description` - Maintenance tasks (deps, config, etc.)
-- `docs(scope): description` - Documentation updates
-- `test(scope): description` - Test additions or updates
-- `build(scope): description` - Build system or dependency changes
+- `feat(scope): description` - 新功能
+- `fix(scope): description` - 错误修复
+- `refactor(scope): description` - 代码重构
+- `chore(scope): description` - 维护任务（依赖、配置等）
+- `docs(scope): description` - 文档更新
+- `test(scope): description` - 测试添加或更新
+- `build(scope): description` - 构建系统或依赖更改
 
-**Atomic Commits:** Group related changes together. Use `filesToStage` parameter to precisely control which files are included in each commit.
+**原子提交：** 将相关更改分组在一起。使用 `filesToStage` 参数精确控制每个提交中包含的文件。
 
 ---
 
-## X. Checks & Workflow Commands
+## X. 检查与工作流程命令
 
-| Command                    | Purpose                                                                                        |
+| 命令                    | 用途                                                                                        |
 | -------------------------- | ---------------------------------------------------------------------------------------------- |
-| `bun run rebuild`          | Clean, rebuild, clear logs (after dep changes)                                                 |
-| `bun run devcheck`         | **USE OFTEN** Lint, format, typecheck, security (flags: `--no-fix`, `--no-lint`, `--no-audit`) |
-| `bun run test`             | Unit/integration tests                                                                         |
-| `bun run dev:stdio/http`   | Development mode                                                                               |
-| `bun run start:stdio/http` | Production mode (after build)                                                                  |
-| `bun run build:worker`     | Cloudflare Worker bundle                                                                       |
+| `npm run rebuild`          | 清理并重建（依赖更改后）                                                          |
+| `npm run typecheck`        | TypeScript 类型检查                                                                       |
+| `npm run lint`             | ESLint 代码检查                                                                           |
+| `npm run test`             | 单元/集成测试                                                                         |
+| `npm run dev:stdio/http`   | 开发模式                                                                               |
+| `npm run start:stdio/http` | 生产模式（构建后）                                                                  |
+| `npm run build`            | 生产构建                                                                           |
 
 ---
 
-## XI. Configuration & Environment
+## XI. 配置与环境
 
-All config validated via Zod in `src/config/index.ts`. Derives `serviceName`/`version` from `package.json`.
+所有配置通过 `src/config/index.ts` 中的 Zod 进行验证。从 `package.json` 派生 `serviceName`/`version`。
 
-| Category      | Key Variables                                                                                                   |
+| 类别      | 关键变量                                                                                                   |
 | ------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Transport** | `MCP_TRANSPORT_TYPE` (`stdio`\|`http`), `MCP_HTTP_PORT/HOST/PATH`                                               |
-| **Auth**      | `MCP_AUTH_MODE` (`none`\|`jwt`\|`oauth`), `MCP_AUTH_SECRET_KEY`, `OAUTH_*`                                      |
-| **Storage**   | `STORAGE_PROVIDER_TYPE` (`in-memory`\|`filesystem`\|`supabase`\|`surrealdb`\|`cloudflare-r2/kv`), `SURREALDB_*` |
-| **LLM**       | `OPENROUTER_API_KEY`, `OPENROUTER_APP_URL/NAME`, `LLM_DEFAULT_*`                                                |
-| **Telemetry** | `OTEL_ENABLED`, `OTEL_SERVICE_NAME/VERSION`, `OTEL_EXPORTER_OTLP_*`                                             |
+| **传输** | `MCP_TRANSPORT_TYPE`（`stdio`\|`http`）、`MCP_HTTP_PORT/HOST/PATH`                                               |
+| **身份验证**      | `MCP_AUTH_MODE`（`none`\|`jwt`\|`oauth`）、`MCP_AUTH_SECRET_KEY`、`OAUTH_*`                                      |
+| **存储**   | `STORAGE_PROVIDER_TYPE`（`in-memory`\|`filesystem`\|`supabase`\|`surrealdb`\|`cloudflare-r2/kv`）、`SURREALDB_*` |
+| **LLM**       | `OPENROUTER_API_KEY`、`OPENROUTER_APP_URL/NAME`、`LLM_DEFAULT_*`                                                |
+| **遥测** | `OTEL_ENABLED`、`OTEL_SERVICE_NAME/VERSION`、`OTEL_EXPORTER_OTLP_*`                                             |
 
 ---
 
-## XII. Local & Edge Targets
+## XII. 本地与边缘目标
 
-**Local parity:** stdio/HTTP transports work identically. **Worker:** `build:worker` + `wrangler dev --local` must succeed. **wrangler.toml:** `compatibility_date` ≥ `2025-09-01`, `nodejs_compat`.
-
----
-
-## XIII. Multi-Tenancy & Storage Context
-
-**`StorageService` requires `context.tenantId`** (throws if missing). **Validation:** Max 128 chars, alphanumeric/hyphens/underscores/dots only, start/end alphanumeric, no path traversal (`../`), no consecutive dots.
-
-**HTTP with Auth:** `tenantId` auto-extracted from JWT `'tid'` claim → propagated via `requestContextService.withAuthInfo(authInfo)`. Context includes: `{ requestId, timestamp, tenantId, auth: { sub, clientId, scopes, token, tenantId } }`.
-
-**STDIO:** Explicitly set tenant via `requestContextService.createRequestContext({ operation, tenantId })`.
+**本地对等：** stdio/HTTP 传输工作方式相同。**Worker：** `build:worker` + `wrangler dev --local` 必须成功。**wrangler.toml：** `compatibility_date` ≥ `2025-09-01`、`nodejs_compat`。
 
 ---
 
-## XIV. Quick Checklist
+## XIII. 多租户与存储上下文
 
-- [ ] Implement pure logic in `*.tool.ts`/`*.resource.ts` (no `try...catch`, throw `McpError`)
-- [ ] Apply auth with `withToolAuth`/`withResourceAuth`
-- [ ] Use `logger` with `appContext`, `StorageService` (DI) for persistence
-- [ ] Use `sdkContext.elicitInput()`/`createMessage()` for client interaction
-- [ ] Register in `index.ts` barrel
-- [ ] Add/update tests (`bun test`)
-- [ ] **Run `bun devcheck`** (lint, format, typecheck, security)
-- [ ] Smoke-test local transports (`dev:stdio`/`http`)
-- [ ] Validate Worker bundle (`build:worker`)
+**`StorageService` 需要 `context.tenantId`**（如果缺失则抛出）。**验证：** 最多 128 个字符，仅字母数字/连字符/下划线/点，开始/结束为字母数字，无路径遍历（`../`），无连续点。
 
-Follow this document precisely.
+**带身份验证的 HTTP：** `tenantId` 从 JWT `'tid'` 声明自动提取 → 通过 `requestContextService.withAuthInfo(authInfo)` 传播。上下文包括：`{ requestId, timestamp, tenantId, auth: { sub, clientId, scopes, token, tenantId } }`。
+
+**STDIO：** 通过 `requestContextService.createRequestContext({ operation, tenantId })` 显式设置租户。
+
+---
+
+## XIV. 快速检查清单
+
+- [ ] 在 `*.tool.ts`/`*.resource.ts` 中实现纯逻辑（不使用 `try...catch`，抛出 `McpError`）
+- [ ] 使用 `withToolAuth`/`withResourceAuth` 应用身份验证
+- [ ] 使用带有 `appContext` 的 `logger`，使用 `StorageService`（DI）进行持久化
+- [ ] 使用 `sdkContext.elicitInput()`/`createMessage()` 进行客户端交互
+- [ ] 在 `index.ts` 桶中注册
+- [ ] 添加/更新测试（`npm run test`）
+- [ ] **运行 `npm run typecheck && npm run lint`**（类型检查、代码检查）
+- [ ] 本地传输冒烟测试（`dev:stdio`/`http`）
+- [ ] 构建并验证（`npm run build`）
+
+请严格遵循本文档。
