@@ -216,9 +216,9 @@ export class ElevenLabsProvider implements ISpeechProvider {
         );
       }
 
-      const data = (await response.json()) as ElevenLabsVoicesResponse;
+      const data: ElevenLabsVoicesResponse = await response.json();
 
-      const voices: Voice[] = data.voices.map((v) => ({
+      const voices: Voice[] = data.voices.map((v: ElevenLabsVoice) => ({
         id: v.voice_id,
         name: v.name,
         ...(v.description !== undefined && { description: v.description }),

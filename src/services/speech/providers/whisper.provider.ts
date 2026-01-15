@@ -186,10 +186,10 @@ export class WhisperProvider implements ISpeechProvider {
         );
       }
 
-      const data = (await response.json()) as WhisperTranscriptionResponse;
+      const data: WhisperTranscriptionResponse = await response.json();
 
       // Convert word timestamps if present
-      const words: WordTimestamp[] | undefined = data.words?.map((w) => ({
+      const words: WordTimestamp[] | undefined = data.words?.map((w: { word: string; start: number; end: number }) => ({
         word: w.word,
         start: w.start,
         end: w.end,
