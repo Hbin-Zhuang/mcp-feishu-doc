@@ -18,6 +18,7 @@ export default [
       'build/',
       'node_modules/',
       '**/.wrangler/',
+      'feishushare/',
     ],
   },
 

@@ -9,6 +9,7 @@ import 'reflect-metadata';
 import { container } from 'tsyringe';
 
 import { registerCoreServices } from '@/container/registrations/core.js';
+import { registerFeishuServices } from '@/container/registrations/feishu.js';
 import { registerMcpServices } from '@/container/registrations/mcp.js';
 
 let isContainerComposed = false;
@@ -23,6 +24,7 @@ export function composeContainer(): void {
   }
 
   registerCoreServices();
+  registerFeishuServices();
   registerMcpServices();
 
   isContainerComposed = true;
