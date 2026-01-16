@@ -160,6 +160,7 @@ export class FeishuService implements IFeishuService {
       processResult.content,
       config.targetType,
       config.targetId,
+      config.parentNodeToken,
     );
 
     const uploadedFiles = await this.uploadLocalFiles(
@@ -343,6 +344,16 @@ export class FeishuService implements IFeishuService {
 
     await this.storeAuth(finalAppId, { ...auth, userInfo }, ctx);
     await this.storage.delete(`feishu/state/${state}`, ctx);
+
+    // 检查是否只有一个应用，如果是则自动设置为默认应用
+    const apps = await this.listApps(ctx);
+    if (apps.length === 1) {
+      logger.info('检测到只有一个应用，自动设置为默认应用', {
+        ...ctx,
+        appId: finalAppId,
+      });
+      await this.setDefaultApp(ctx, finalAppId);
+    }
 
     logger.info('OAuth 认证成功', ctx);
     return { success: true, userInfo, expiresAt: auth.expiresAt };
