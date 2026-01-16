@@ -192,7 +192,7 @@ async function updateLogic(
     },
     {
       ...(input.appId ? { appId: input.appId } : {}),
-      targetType: 'drive',
+      targetType: 'wiki',
       uploadImages: input.uploadImages,
       uploadAttachments: input.uploadAttachments,
       removeFrontMatter: input.removeFrontMatter,
