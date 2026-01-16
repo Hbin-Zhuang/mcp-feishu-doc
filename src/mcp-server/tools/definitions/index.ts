@@ -13,6 +13,7 @@ import { feishuUploadMarkdownTool } from './feishu-upload-markdown.tool.js';
 import { feishuUpdateDocumentTool } from './feishu-update-document.tool.js';
 import { feishuListFoldersTool } from './feishu-list-folders.tool.js';
 import { feishuListWikisTool } from './feishu-list-wikis.tool.js';
+import { feishuListWikiNodesTool } from './feishu-list-wiki-nodes.tool.js';
 import { feishuGetUserInfoTool } from './feishu-get-user-info.tool.js';
 import { feishuSetDefaultAppTool } from './feishu-set-default-app.tool.js';
 import { feishuListAppsTool } from './feishu-list-apps.tool.js';
@@ -41,6 +42,7 @@ export const allToolDefinitions = [
   // 飞书管理工具
   feishuListFoldersTool, // 飞书管理：列出文件夹
   feishuListWikisTool, // 飞书管理：列出知识库
+  feishuListWikiNodesTool, // 飞书管理：列出知识库节点
   feishuGetUserInfoTool, // 飞书管理：获取用户信息
   feishuSetDefaultAppTool, // 飞书管理：设置默认应用
   feishuListAppsTool, // 飞书管理：列出应用
