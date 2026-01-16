@@ -237,20 +237,28 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   /**
    * createDocument method 创建飞书文档.
    * 使用飞书的导入API，先上传Markdown文件，然后导入为富文本文档
+   * 如果目标是知识库，会先创建云文档，然后移动到知识库
    */
   public async createDocument(
     accessToken: string,
     title: string,
     content: string,
-    _targetType: 'drive' | 'wiki',
-    _targetId?: string,
+    targetType: 'drive' | 'wiki',
+    targetId?: string,
+    parentNodeToken?: string,
   ): Promise<FeishuDocument> {
     const ctx = requestContextService.createRequestContext({
       operation: 'feishu.createDocument',
       tenantId: 'feishu-service',
     });
 
-    logger.info('开始创建飞书文档', { ...ctx, title });
+    logger.info('开始创建飞书文档', { 
+      ...ctx, 
+      title, 
+      targetType, 
+      targetId,
+      parentNodeToken 
+    });
 
     // 第一步：上传Markdown文件到飞书
     logger.debug('第一步：上传Markdown文件', ctx);
@@ -274,12 +282,13 @@ export class FeishuApiProvider implements IFeishuApiProvider {
 
     logger.info('文件上传成功', { ...ctx, fileToken: uploadResult.fileToken });
 
-    // 第二步：创建导入任务
-    logger.debug('第二步：创建导入任务', ctx);
+    // 第二步：创建导入任务（总是先导入到云空间）
+    logger.debug('第二步：创建导入任务到云空间', ctx);
     const importResult = await this.createImportTask(
       accessToken,
       uploadResult.fileToken,
       title,
+      targetType === 'drive' ? targetId : undefined, // 只有云空间类型才传递文件夹ID
     );
 
     if (!importResult.success || !importResult.ticket) {
@@ -320,6 +329,54 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       documentToken: finalResult.documentToken,
     });
 
+    // 第四步：如果目标是知识库，移动文档到知识库
+    if (targetType === 'wiki' && targetId) {
+      logger.info('第四步：移动文档到知识库', {
+        ...ctx,
+        wikiSpaceId: targetId,
+        documentToken: finalResult.documentToken,
+        parentNodeToken,
+      });
+
+      const moveResult = await this.moveDocToWiki(
+        accessToken,
+        targetId,
+        finalResult.documentToken,
+        'docx',
+        parentNodeToken,
+      );
+
+      if (!moveResult.success) {
+        logger.warning('移动到知识库失败，返回云文档链接', {
+          ...ctx,
+          error: moveResult.error,
+        });
+        // 移动失败，但文档已创建，返回云文档链接
+        return {
+          documentId: finalResult.documentToken,
+          url: `https://feishu.cn/docx/${finalResult.documentToken}`,
+          title,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      }
+
+      logger.info('文档已成功移动到知识库', {
+        ...ctx,
+        wikiToken: moveResult.wikiToken,
+      });
+
+      // 返回云文档URL（即使在知识库中，也使用云文档URL便于后续操作）
+      return {
+        documentId: finalResult.documentToken,
+        url: `https://feishu.cn/docx/${finalResult.documentToken}`,
+        title,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+    }
+
+    // 云空间文档，直接返回
     return {
       documentId: finalResult.documentToken,
       url: `https://feishu.cn/docx/${finalResult.documentToken}`,
@@ -991,25 +1048,43 @@ export class FeishuApiProvider implements IFeishuApiProvider {
 
   /**
    * createImportTask method 创建导入任务.
-   * 基于feishushare的实现，添加了point参数指定文档位置
+   * 基于feishushare的实现，支持指定目标文件夹
+   * 注意：飞书 API 要求必须提供 point 参数，即使上传到根目录
    */
   private async createImportTask(
     accessToken: string,
     fileToken: string,
     title: string,
+    targetFolderId?: string,
   ): Promise<{ success: boolean; ticket?: string; error?: string }> {
+    const ctx = requestContextService.createRequestContext({
+      operation: 'feishu.createImportTask',
+      tenantId: 'feishu-service',
+    });
+
     try {
       const url = `${FEISHU_CONFIG.BASE_URL}/drive/v1/import_tasks`;
-      const requestBody = {
+      
+      // 构建请求体
+      // 注意：根据参考项目 feishushare 的实现，point 参数是必需的
+      // 如果不提供 targetFolderId，使用空字符串表示用户的根目录（我的空间）
+      const requestBody: Record<string, unknown> = {
         file_extension: 'md',
         file_token: fileToken,
         type: 'docx',
         file_name: title,
         point: {
           mount_type: 1, // 1=云空间
-          mount_key: 'nodcn2EG5YG1i5Rsh5uZs0FsUje', // 默认根文件夹
+          mount_key: targetFolderId || '', // 空字符串表示根目录
         },
       };
+
+      logger.debug('创建导入任务请求', {
+        ...ctx,
+        url,
+        requestBody,
+        hasTargetFolder: !!targetFolderId,
+      });
 
       const response = await this.requestWithAuth<
         FeishuApiResponse<{ ticket: string }>
@@ -1019,18 +1094,44 @@ export class FeishuApiProvider implements IFeishuApiProvider {
         body: JSON.stringify(requestBody),
       });
 
+      logger.debug('创建导入任务响应', {
+        ...ctx,
+        code: response.code,
+        msg: response.msg,
+        hasData: !!response.data,
+      });
+
       if (response.code === 0 && response.data) {
+        logger.info('导入任务创建成功', {
+          ...ctx,
+          ticket: response.data.ticket,
+        });
         return {
           success: true,
           ticket: response.data.ticket,
         };
       } else {
+        logger.error(
+          '创建导入任务失败',
+          new Error(`API错误: ${response.code} - ${response.msg}`),
+          {
+            ...ctx,
+            code: response.code,
+            msg: response.msg,
+            requestBody,
+          },
+        );
         return {
           success: false,
           error: response.msg || '创建导入任务失败',
         };
       }
     } catch (error) {
+      logger.error(
+        '创建导入任务异常',
+        error instanceof Error ? error : new Error(String(error)),
+        ctx,
+      );
       return {
         success: false,
         error: error instanceof Error ? error.message : '创建导入任务失败',
@@ -1041,20 +1142,39 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   /**
    * waitForImportCompletion method 等待导入完成.
    * 基于feishushare的实现，改进了状态处理逻辑
+   * 增加超时时间到60秒，更宽容的状态处理
    */
   private async waitForImportCompletion(
     accessToken: string,
     ticket: string,
-    timeoutMs: number = 15000,
+    timeoutMs: number = 60000, // 增加到60秒
   ): Promise<{ success: boolean; documentToken?: string; error?: string }> {
     const startTime = Date.now();
-    const maxAttempts = 25;
+    const maxAttempts = 30; // 增加最大尝试次数
+
+    const ctx = requestContextService.createRequestContext({
+      operation: 'feishu.waitForImportCompletion',
+      tenantId: 'feishu-service',
+    });
+
+    logger.info('开始等待导入任务完成', {
+      ...ctx,
+      ticket,
+      timeoutMs,
+      maxAttempts,
+    });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const elapsedTime = Date.now() - startTime;
 
       // 检查是否超时
       if (elapsedTime >= timeoutMs) {
+        logger.warning('导入任务超时', {
+          ...ctx,
+          elapsedTime,
+          timeoutMs,
+          totalAttempts: attempt,
+        });
         return {
           success: false,
           error: `导入任务超时 (${timeoutMs}ms)`,
@@ -1078,28 +1198,23 @@ export class FeishuApiProvider implements IFeishuApiProvider {
           const documentToken = response.data.result.token;
           const errorMsg = response.data.result.job_error_msg;
 
-          const ctx = requestContextService.createRequestContext({
-            operation: 'feishu.waitForImportCompletion',
-            tenantId: 'feishu-service',
-          });
-
           logger.debug('导入任务状态检查', {
             ...ctx,
             attempt,
             jobStatus,
             documentToken: documentToken ? 'present' : 'missing',
             errorMsg,
-            elapsedTime: Date.now() - startTime,
+            elapsedTime,
           });
 
+          // 状态 0 或 3 = 成功
           if (jobStatus === 0 || jobStatus === 3) {
-            // 成功状态
             if (documentToken) {
               logger.info('导入任务成功完成', {
                 ...ctx,
                 documentToken,
                 totalAttempts: attempt,
-                totalTime: Date.now() - startTime,
+                totalTime: elapsedTime,
               });
               return {
                 success: true,
@@ -1112,25 +1227,33 @@ export class FeishuApiProvider implements IFeishuApiProvider {
               });
               // 继续等待，可能token还没有返回
             }
-          } else if (jobStatus === 2) {
-            // 失败状态，但检查是否有document token
+          }
+          // 状态 2 = 失败，但要宽容处理
+          else if (jobStatus === 2) {
+            // 如果有document token，即使显示失败也认为成功
             if (documentToken) {
-              // 即使显示失败，如果有token也认为成功
               logger.info('状态显示失败但有token，认为成功', {
                 ...ctx,
                 documentToken,
                 errorMsg,
+                attempt,
               });
               return {
                 success: true,
                 documentToken,
               };
-            } else if (attempt <= 8) {
-              // 前8次尝试时，即使显示失败也继续等待
-              logger.debug('失败状态但继续等待', { ...ctx, attempt, errorMsg });
+            }
+            // 前15次尝试时，即使显示失败也继续等待（更宽容）
+            else if (attempt <= 15) {
+              logger.debug('失败状态但继续等待', {
+                ...ctx,
+                attempt,
+                errorMsg,
+              });
               // 继续等待
-            } else {
-              // 8次后才真正认为失败
+            }
+            // 15次后才真正认为失败
+            else {
               logger.error(
                 '导入任务最终失败',
                 new Error(errorMsg || '导入任务失败'),
@@ -1145,8 +1268,9 @@ export class FeishuApiProvider implements IFeishuApiProvider {
                 error: errorMsg || '导入任务失败',
               };
             }
-          } else if (jobStatus === -1) {
-            // 明确的失败状态
+          }
+          // 状态 -1 = 明确失败
+          else if (jobStatus === -1) {
             logger.error(
               '导入任务明确失败',
               new Error(errorMsg || '导入失败'),
@@ -1160,11 +1284,29 @@ export class FeishuApiProvider implements IFeishuApiProvider {
               success: false,
               error: errorMsg || '导入失败',
             };
-          } else if (jobStatus === 1) {
-            // 进行中状态
-            logger.debug('导入任务进行中', { ...ctx, attempt });
-          } else {
-            // 未知状态
+          }
+          // 状态 1 = 进行中
+          else if (jobStatus === 1) {
+            logger.debug('导入任务进行中', { ...ctx, attempt, elapsedTime });
+          }
+          // 状态 116 = 权限错误
+          else if (jobStatus === 116) {
+            logger.error(
+              '导入任务权限错误',
+              new Error(errorMsg || '无权限访问目标位置'),
+              {
+                ...ctx,
+                attempt,
+                errorMsg,
+              },
+            );
+            return {
+              success: false,
+              error: `权限错误: ${errorMsg || '无权限访问目标位置'}。请检查：1) 应用是否有知识库权限 2) 知识库ID是否正确 3) 尝试先上传到云空间`,
+            };
+          }
+          // 未知状态
+          else {
             logger.warning('未知的导入任务状态', {
               ...ctx,
               attempt,
@@ -1173,6 +1315,13 @@ export class FeishuApiProvider implements IFeishuApiProvider {
               errorMsg,
             });
           }
+        } else {
+          logger.warning('导入任务状态查询失败', {
+            ...ctx,
+            attempt,
+            code: response.code,
+            msg: response.msg,
+          });
         }
 
         // 渐进式延迟
@@ -1180,12 +1329,23 @@ export class FeishuApiProvider implements IFeishuApiProvider {
           const delay = this.getDelayForAttempt(attempt);
           await this.sleep(delay);
         }
-      } catch (_error) {
-        // 轮询过程中的错误，继续尝试
+      } catch (error) {
+        // 轮询过程中的错误，记录但继续尝试
+        logger.debug('导入任务状态查询异常，继续尝试', {
+          ...ctx,
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        });
         const delay = this.getDelayForAttempt(attempt);
         await this.sleep(delay);
       }
     }
+
+    logger.error('导入任务达到最大尝试次数', {
+      ...ctx,
+      maxAttempts,
+      totalTime: Date.now() - startTime,
+    });
 
     return {
       success: false,
@@ -1195,15 +1355,19 @@ export class FeishuApiProvider implements IFeishuApiProvider {
 
   /**
    * getDelayForAttempt method 获取渐进式延迟时间.
+   * 优化延迟策略，更快速地检查状态
    */
   private getDelayForAttempt(attempt: number): number {
     // 渐进式延迟策略：
-    // 前3次：1秒 (快速检查)
-    // 4-8次：2秒 (正常检查)
-    // 9次以后：3秒 (慢速检查)
-    if (attempt <= 3) {
+    // 前5次：500ms (快速检查)
+    // 6-10次：1秒 (正常检查)
+    // 11-20次：2秒 (中速检查)
+    // 21次以后：3秒 (慢速检查)
+    if (attempt <= 5) {
+      return 500; // 500ms
+    } else if (attempt <= 10) {
       return 1000; // 1秒
-    } else if (attempt <= 8) {
+    } else if (attempt <= 20) {
       return 2000; // 2秒
     } else {
       return 3000; // 3秒
