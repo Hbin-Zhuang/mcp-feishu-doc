@@ -94,6 +94,12 @@ const InputSchema = z
       .describe(
         '目标 ID。drive 类型为文件夹 token，wiki 类型为空间 ID。不提供则上传到根目录。',
       ),
+    parentNodeToken: z
+      .string()
+      .optional()
+      .describe(
+        '父节点 token。用于在云空间文档或知识库文档下创建子文档。如果提供，文档将作为该节点的子文档创建。',
+      ),
     appId: z
       .string()
       .optional()
@@ -214,6 +220,7 @@ async function uploadLogic(
       ...(input.appId ? { appId: input.appId } : {}),
       targetType: input.targetType,
       ...(input.targetId ? { targetId: input.targetId } : {}),
+      ...(input.parentNodeToken ? { parentNodeToken: input.parentNodeToken } : {}),
       uploadImages: input.uploadImages,
       uploadAttachments: input.uploadAttachments,
       removeFrontMatter: input.removeFrontMatter,
