@@ -28,7 +28,7 @@ export const FEISHU_CONFIG: FeishuConfig & {
 
   // API 权限范围（包含 offline_access 以支持 refresh_token）
   SCOPES:
-    'contact:user.base:readonly docx:document drive:drive wiki:wiki offline_access',
+    'contact:user.base:readonly docx:document wiki:wiki offline_access',
 
   // 文件上传相关（使用素材上传 API，导入后自动删除源文件）
   UPLOAD_URL: 'https://open.feishu.cn/open-apis/drive/v1/medias/upload_all',
@@ -162,7 +162,7 @@ export const CALLOUT_COLOR_MAP: Record<
  * DEFAULT_UPLOAD_CONFIG const 默认上传配置.
  */
 export const DEFAULT_UPLOAD_CONFIG = {
-  targetType: 'drive' as const,
+  targetType: 'wiki' as const,
   uploadImages: true,
   uploadAttachments: true,
   removeFrontMatter: true,

@@ -76,7 +76,7 @@ const DocumentSchema = z
     title: z.string().optional().describe('文档标题。'),
     targetType: z
       .enum(['drive', 'wiki'])
-      .default('drive')
+      .default('wiki')
       .describe('目标类型。'),
     targetId: z.string().optional().describe('目标 ID。'),
   })

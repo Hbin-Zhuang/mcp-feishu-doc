@@ -11,15 +11,9 @@ import { composeContainer } from '@/container/index.js';
 import { container } from 'tsyringe';
 import {
   FeishuApiProviderToken,
-  FeishuServiceToken,
-  StorageService,
 } from '@/container/tokens.js';
 import type { FeishuApiProvider } from '@/services/feishu/providers/feishu-api.provider.js';
-import type { FeishuService } from '@/services/feishu/core/FeishuService.js';
-import type { StorageService as IStorageService } from '@/storage/core/StorageService.js';
 import { requestContextService } from '@/utils/index.js';
-import { McpError } from '@/types-global/errors.js';
-import type { FeishuAuth, FeishuUserInfo } from '@/services/feishu/types.js';
 
 // 集成测试需要真实的飞书凭证
 const hasFeishuCredentials = !!(

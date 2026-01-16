@@ -86,7 +86,7 @@ const InputSchema = z
       ),
     targetType: z
       .enum(['drive', 'wiki'])
-      .default('drive')
+      .default('wiki')
       .describe('目标类型：drive（云空间）或 wiki（知识库）。'),
     targetId: z
       .string()
