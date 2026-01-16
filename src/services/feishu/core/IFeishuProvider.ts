@@ -81,6 +81,7 @@ export interface IFeishuApiProvider {
    * @param content Markdown 内容
    * @param targetType 目标类型 (drive/wiki)
    * @param targetId 目标 ID (文件夹 ID 或知识库 ID)
+   * @param parentNodeToken 父节点 token (可选，用于创建子文档)
    * @returns 创建的文档信息
    */
   createDocument(
@@ -89,6 +90,7 @@ export interface IFeishuApiProvider {
     content: string,
     targetType: 'drive' | 'wiki',
     targetId?: string,
+    parentNodeToken?: string,
   ): Promise<FeishuDocument>;
 
   /**
