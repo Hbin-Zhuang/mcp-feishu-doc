@@ -33,6 +33,12 @@ export class PromptRegistry {
       context,
     );
 
+    // Early return if no prompts to register
+    if (allPromptDefinitions.length === 0) {
+      this.logger.info('No prompts to register', context);
+      return;
+    }
+
     // Register each prompt using the SDK's registerPrompt API
     for (const promptDef of allPromptDefinitions) {
       this.logger.debug(`Registering prompt: ${promptDef.name}`, context);

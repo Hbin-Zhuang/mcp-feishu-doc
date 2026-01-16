@@ -4,13 +4,11 @@
  *
  * @module src/mcp-server/transports/hybrid/hybridTransport
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { html } from 'hono/html';
 import { container } from 'tsyringe';
-import type { ServerResponse } from 'node:http';
 
 import { config } from '@/config/index.js';
 import { FeishuServiceToken } from '@/container/tokens.js';
