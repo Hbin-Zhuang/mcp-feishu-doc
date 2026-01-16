@@ -19,13 +19,22 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { ServerType } from '@hono/node-server';
 
+import { config } from '@/config/index.js';
+import {
+  startOAuthCallbackServer,
+  stopOAuthCallbackServer,
+} from '@/mcp-server/transports/hybrid/hybridTransport.js';
 import {
   ErrorHandler,
   type RequestContext,
   logger,
   logStartupBanner,
 } from '@/utils/index.js';
+
+// 存储 OAuth 回调服务器实例
+let oauthCallbackServer: ServerType | null = null;
 
 /**
  * Connects a given `McpServer` instance to the Stdio transport.
@@ -72,8 +81,26 @@ export async function startStdioTransport(
       'MCP Server connected and listening via stdio transport.',
       operationContext,
     );
+
+    // 如果配置了飞书服务，启动 OAuth 回调服务器
+    if (config.feishu?.oauthCallbackUrl) {
+      try {
+        logger.info('Starting OAuth callback server for Feishu...', operationContext);
+        oauthCallbackServer = await startOAuthCallbackServer(operationContext);
+        logger.info('OAuth callback server started successfully', operationContext);
+      } catch (err) {
+        logger.warning(
+          'Failed to start OAuth callback server, OAuth features may not work',
+          {
+            ...operationContext,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
+      }
+    }
+
     logStartupBanner(
-      `\n🚀 MCP Server running in STDIO mode.\n   (MCP Spec: 2025-06-18 Stdio Transport)\n`,
+      `\n🚀 MCP Server running in STDIO mode.\n   (MCP Spec: 2025-06-18 Stdio Transport)\n${oauthCallbackServer ? `   OAuth callback server: http://${config.mcpHttpHost}:${config.mcpHttpPort}\n` : ''}`,
       'stdio',
     );
     return server;
@@ -98,6 +125,21 @@ export async function stopStdioTransport(
     transportType: 'Stdio',
   };
   logger.info('Attempting to stop stdio transport...', operationContext);
+
+  // 先停止 OAuth 回调服务器
+  if (oauthCallbackServer) {
+    try {
+      await stopOAuthCallbackServer(oauthCallbackServer, operationContext);
+      oauthCallbackServer = null;
+    } catch (err) {
+      logger.warning('Failed to stop OAuth callback server', {
+        ...operationContext,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 然后停止 stdio 传输
   if (server) {
     await server.close();
     logger.info('Stdio transport stopped successfully.', operationContext);

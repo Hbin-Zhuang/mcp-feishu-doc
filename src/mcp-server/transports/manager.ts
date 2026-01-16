@@ -15,6 +15,7 @@ import {
 import { requestContextService } from '../../utils/index.js';
 import type { logger as LoggerType } from '../../utils/index.js';
 import { startHttpTransport, stopHttpTransport } from './http/httpTransport.js';
+import { startStreamableHttpTransport, stopStreamableHttpTransport } from './http/streamableHttpTransport.js';
 import type { TransportServer } from './ITransport.js';
 import {
   startStdioTransport,
@@ -46,7 +47,14 @@ export class TransportManager {
     const mcpServer = await this.createMcpServer();
 
     if (this.config.mcpTransportType === 'http') {
-      this.serverInstance = await startHttpTransport(mcpServer, context);
+      // 根据配置选择 HTTP 传输模式
+      if (this.config.mcpHttpTransportMode === 'sse') {
+        this.logger.info('Using Streamable HTTP (SSE) transport', context);
+        this.serverInstance = await startStreamableHttpTransport(mcpServer, context);
+      } else {
+        this.logger.info('Using @hono/mcp StreamableHTTP transport', context);
+        this.serverInstance = await startHttpTransport(mcpServer, context);
+      }
     } else if (this.config.mcpTransportType === 'stdio') {
       this.serverInstance = await startStdioTransport(mcpServer, context);
     } else {
@@ -74,7 +82,11 @@ export class TransportManager {
     }
 
     if (this.config.mcpTransportType === 'http') {
-      await stopHttpTransport(this.serverInstance as ServerType, context);
+      if (this.config.mcpHttpTransportMode === 'sse') {
+        await stopStreamableHttpTransport(this.serverInstance as ServerType, context);
+      } else {
+        await stopHttpTransport(this.serverInstance as ServerType, context);
+      }
     } else if (this.config.mcpTransportType === 'stdio') {
       await stopStdioTransport(this.serverInstance as McpServer, context);
     }
