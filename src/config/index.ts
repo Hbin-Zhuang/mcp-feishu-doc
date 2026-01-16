@@ -89,6 +89,10 @@ const ConfigSchema = z.object({
     emptyStringAsUndefined,
     z.enum(['stdio', 'http']).default('stdio'),
   ),
+  mcpHttpTransportMode: z.preprocess(
+    emptyStringAsUndefined,
+    z.enum(['streamable', 'sse']).default('sse'),
+  ),
   mcpSessionMode: z.preprocess(
     emptyStringAsUndefined,
     z.enum(['stateless', 'stateful', 'auto']).default('auto'),
@@ -292,6 +296,7 @@ const parseConfig = () => {
     logsPath: env.LOGS_DIR,
     environment: env.NODE_ENV,
     mcpTransportType: env.MCP_TRANSPORT_TYPE,
+    mcpHttpTransportMode: env.MCP_HTTP_TRANSPORT_MODE,
     mcpSessionMode: env.MCP_SESSION_MODE,
     mcpResponseVerbosity: env.MCP_RESPONSE_VERBOSITY,
     mcpHttpPort: env.MCP_HTTP_PORT,
