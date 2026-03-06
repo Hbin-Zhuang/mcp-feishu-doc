@@ -1,6 +1,6 @@
-# MCP TypeScript 模板开发指南
+# mcp-feishu-doc 开发指南
 
-本文档提供 MCP 服务器开发的核心规范和示例。
+本文档提供 mcp-feishu-doc 项目开发的核心规范和示例。
 
 ## 目录结构
 
@@ -248,9 +248,7 @@ npm run rebuild      # 清理并重新构建
 
 ## 示例工具
 
-项目包含两个核心示例：
+参考 `src/mcp-server/tools/definitions/` 中的飞书工具实现创建新工具，例如：
 
-1. **template_echo_message** - 基础消息回显，展示工具定义的完整结构
-2. **template_cat_fact** - 外部 API 调用，展示网络请求和错误处理
-
-参考这些示例创建你自己的工具。
+1. **feishu_auth_url** - 生成 OAuth 授权链接，展示参数校验与 URL 构建
+2. **feishu_upload_markdown** - 上传文档，展示外部 API 调用和错误处理

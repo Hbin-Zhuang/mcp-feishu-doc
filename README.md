@@ -1,13 +1,13 @@
 <div align="center">
-  <h1>mcp-ts-template</h1>
-  <p><b>用于构建模型上下文协议（MCP）服务器的生产级 TypeScript 模板。提供声明式工具/资源、强大的错误处理、依赖注入、简易身份验证、可选的 OpenTelemetry，以及对本地和边缘（Cloudflare Workers）运行时的优先支持。</b>
-  <div>16 个工具 • 1 个资源 • 1 个提示</div>
+  <h1>mcp-feishu-doc</h1>
+  <p><b>飞书（Lark）云文档与知识库管理的 MCP 服务器。支持 OAuth 授权、Markdown 上传/更新/删除、文档搜索、多应用配置，以及本地和边缘（Cloudflare Workers）运行。</b>
+  <div>16 个飞书工具</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/cyanheads/mcp-ts-template/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.2.21-blueviolet.svg?style=flat-square)](https://bun.sh/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
+[![Version](https://img.shields.io/badge/Version-2.6.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.2.21-blueviolet.svg?style=flat-square)](https://bun.sh/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
 
 </div>
 
@@ -15,21 +15,17 @@
 
 ## ✨ 特性
 
-- **声明式工具和资源**：在单个自包含文件中定义功能。框架处理注册和执行。
-- **引导支持**：工具可以在执行期间交互式地提示用户输入缺失的参数，简化用户工作流程。
-- **强大的错误处理**：统一的 `McpError` 系统确保整个服务器的一致、结构化错误响应。
-- **可插拔身份验证**：通过零配置支持 `none`、`jwt` 或 `oauth` 模式来保护您的服务器。
-- **抽象化存储**：在不更改业务逻辑的情况下交换存储后端（`in-memory`、`filesystem`、`Supabase`、`SurrealDB`、`Cloudflare D1/KV/R2`）。具有安全的不透明游标分页、并行批处理操作和全面的验证功能。
-- **图数据库操作**：可选的图服务，用于关系管理、图遍历和路径查找算法（SurrealDB 提供者）。
-- **全栈可观测性**：通过结构化日志记录（Pino）和可选的自动检测 OpenTelemetry 获取深度洞察，用于跟踪和指标。
-- **依赖注入**：使用 `tsyringe` 构建，实现清晰、解耦和可测试的架构。
-- **服务集成**：用于外部 API 的可插拔服务，包括 LLM 提供者（OpenRouter）、文本转语音（ElevenLabs）和图操作（SurrealDB）。
-- **丰富的内置工具套件**：用于解析（PDF、YAML、CSV、frontmatter）、格式化（差异、表格、树、markdown）、调度、安全等的辅助工具。
-- **边缘就绪**：编写一次代码，即可在本地机器或 Cloudflare Workers 边缘无缝运行。
+- **飞书云文档集成**：OAuth 2.0 认证、Markdown 上传/更新/删除、批量上传、文档搜索。
+- **知识库管理**：列出知识库空间、文件夹、知识库节点。
+- **多应用配置**：支持多个飞书应用、设置默认应用。
+- **抽象化存储**：支持 `in-memory`、`filesystem`、Supabase、SurrealDB 等后端。
+- **强大的错误处理**：统一的 `McpError` 系统确保一致的错误响应。
+- **全栈可观测性**：结构化日志（Pino）和可选的 OpenTelemetry。
+- **边缘就绪**：支持本地或 Cloudflare Workers 运行。
 
 ## 🏗️ 架构
 
-此模板遵循模块化、领域驱动的架构，具有清晰的关注点分离：
+本项目遵循模块化、领域驱动的架构，具有清晰的关注点分离：
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -68,47 +64,27 @@
 
 > 💡 **提示**：每个模块都有自己的综合 README，包含架构图、使用示例和最佳实践。点击上面的链接深入了解！
 
-## 🛠️ 包含的功能
+## 🛠️ 功能概览
 
-此模板包含可工作的示例，帮助您快速开始。
+### 飞书工具
 
-### 工具
-
-| 工具                                | 描述                                           |
-| :---------------------------------- | :--------------------------------------------- |
-| **`template_echo_message`**         | 回显消息，支持可选的格式化和重复。             |
-| **`template_cat_fact`**             | 从外部 API 获取随机猫咪趣事。                  |
-| **`template_madlibs_elicitation`**  | 通过询问单词来完成故事，演示引导功能。         |
-| **`template_code_review_sampling`** | 使用 LLM 服务执行模拟代码审查。                |
-| **`template_image_test`**           | 返回一个测试图像作为 base64 编码的数据 URI。   |
-| **`template_async_countdown`**      | 使用异步倒计时器演示 MCP Tasks API（实验性）。 |
-
-### 飞书 Markdown 工具
-
-| 工具                               | 描述                                   |
-| :--------------------------------- | :------------------------------------- |
-| **`feishu_auth_url`**              | 生成飞书 OAuth 2.0 授权链接。          |
-| **`feishu_auth_callback`**         | 处理飞书 OAuth 授权回调。              |
-| **`feishu_upload_markdown`**       | 上传 Markdown 文档到飞书云文档。       |
-| **`feishu_update_document`**       | 更新已存在的飞书文档（支持冲突检测）。 |
-| **`feishu_batch_upload_markdown`** | 批量上传多个 Markdown 文档。           |
-| **`feishu_list_folders`**          | 列出飞书云空间文件夹。                 |
-| **`feishu_list_wikis`**            | 列出飞书知识库空间。                   |
-| **`feishu_get_user_info`**         | 获取当前飞书用户信息。                 |
-| **`feishu_set_default_app`**       | 设置默认飞书应用。                     |
-| **`feishu_list_apps`**             | 列出已配置的飞书应用。                 |
-
-### 资源
-
-| 资源       | URI                | 描述                       |
-| :--------- | :----------------- | :------------------------- |
-| **`echo`** | `echo://{message}` | 一个简单的资源，回显消息。 |
-
-### 提示
-
-| 提示              | 描述                                    |
-| :---------------- | :-------------------------------------- |
-| **`code-review`** | 用于指导 LLM 执行代码审查的结构化提示。 |
+| 工具                     | 描述                         |
+| :----------------------- | :--------------------------- |
+| **`feishu_auth_url`**    | 生成飞书 OAuth 2.0 授权链接。 |
+| **`feishu_auth_callback`** | 处理飞书 OAuth 授权回调。   |
+| **`feishu_upload_markdown`** | 上传 Markdown 文档到飞书云文档。 |
+| **`feishu_update_document`** | 更新已存在的飞书文档（支持冲突检测）。 |
+| **`feishu_batch_upload_markdown`** | 批量上传多个 Markdown 文档。 |
+| **`feishu_get_document`** | 读取飞书文档内容。          |
+| **`feishu_delete_document`** | 删除飞书文档。            |
+| **`feishu_search_documents`** | 搜索飞书文档。           |
+| **`feishu_list_folders`** | 列出飞书云空间文件夹。      |
+| **`feishu_list_wikis`** | 列出飞书知识库空间。        |
+| **`feishu_list_wiki_nodes`** | 列出知识库节点。       |
+| **`feishu_get_user_info`** | 获取当前飞书用户信息。   |
+| **`feishu_set_default_app`** | 设置默认飞书应用。      |
+| **`feishu_list_apps`** | 列出已配置的飞书应用。      |
+| **`feishu_add_app`** | 添加飞书应用配置。          |
 
 ## 🚀 快速开始
 
@@ -119,10 +95,10 @@
 ```json
 {
   "mcpServers": {
-    "mcp-ts-template": {
+    "mcp-feishu-doc": {
       "type": "stdio",
       "command": "npx",
-      "args": ["mcp-ts-template@latest"],
+      "args": ["mcp-feishu-doc@latest"],
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_LOG_LEVEL": "info",
@@ -143,13 +119,13 @@
 1.  **克隆仓库：**
 
 ```sh
-git clone https://github.com/cyanheads/mcp-ts-template.git
+git clone https://github.com/Hbin-Zhuang/mcp-feishu-doc.git
 ```
 
 2.  **进入目录：**
 
 ```sh
-cd mcp-ts-template
+cd mcp-feishu-doc
 ```
 
 3.  **安装依赖：**
@@ -306,12 +282,11 @@ bun deploy:prod
 
 - **[AGENTS.md](AGENTS.md)** - AI 代理的严格开发规则
 - **[CHANGELOG.md](CHANGELOG.md)** - 版本历史和重大变更
-- **[docs/tree.md](docs/tree.md)** - 完整的可视化目录结构
-- **[docs/publishing-mcp-server-registry.md](docs/publishing-mcp-server-registry.md)** - MCP 注册表发布指南
+- **[docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** - 开发指南
 
 ## 🧑‍💻 代理开发指南
 
-有关在使用此模板与 AI 代理时的严格规则集，请参阅 **`AGENTS.md`**。关键原则包括：
+有关使用 AI 代理开发本项目的规则，请参阅 **`AGENTS.md`**。关键原则包括：
 
 - **逻辑抛出，处理器捕获**：永远不要在工具/资源 `logic` 中使用 `try/catch`。而是抛出 `McpError`。
 - **使用引导获取缺失输入**：如果工具需要用户输入但未提供，请使用 `SdkContext` 中的 `elicitInput` 函数向用户询问。
@@ -323,19 +298,17 @@ bun deploy:prod
 - **这同时支持 STDIO 和 Streamable HTTP 吗？**
   - 是的。两种传输都是一等公民。使用 `bun run dev:stdio` 或 `bun run dev:http`。
 - **我可以将其部署到边缘吗？**
-  - 是的。模板专为 Cloudflare Workers 设计。运行 `bun run build:worker` 并使用 Wrangler 部署。
+  - 是的。本项目支持 Cloudflare Workers。运行 `pnpm run build` 后使用 `pnpm run deploy:dev` 或 `deploy:prod` 部署。
 - **我必须使用 OpenTelemetry 吗？**
   - 不，默认情况下它是禁用的。通过在 `.env` 文件中设置 `OTEL_ENABLED=true` 来启用它。
-- **如何将我的服务器发布到 MCP 注册表？**
-  - 按照 `docs/publishing-mcp-server-registry.md` 中的分步指南操作。
 
 ## 🤝 贡献
 
 欢迎提交问题和拉取请求！如果您计划贡献，请在提交 PR 之前运行本地检查和测试。
 
 ```sh
-bun run devcheck
-bun test
+pnpm run typecheck && pnpm run lint
+pnpm test
 ```
 
 ## 📜 许可证
@@ -346,7 +319,6 @@ bun test
 
 <div align="center">
   <p>
-    <a href="https://github.com/sponsors/cyanheads">赞助此项目</a> •
-    <a href="https://www.buymeacoffee.com/cyanheads">请我喝咖啡</a>
+    <a href="https://github.com/Hbin-Zhuang/mcp-feishu-doc">项目仓库</a>
   </p>
 </div>

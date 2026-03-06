@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-  "name": "io.github.cyanheads/mcp-ts-template",
-  "description": "A production-grade TypeScript template for scalable MCP servers with built-in observability.",
+  "name": "io.github.Hbin-Zhuang/mcp-feishu-doc",
+  "description": "MCP server for Feishu: Markdown to docs & Wiki in one step.",
   "repository": {
-    "url": "https://github.com/cyanheads/mcp-ts-template",
+    "url": "https://github.com/Hbin-Zhuang/mcp-feishu-doc",
     "source": "github"
   },
   "version": "2.6.0",
@@ -11,7 +11,7 @@
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "mcp-ts-template",
+      "identifier": "mcp-feishu-doc",
       "runtimeHint": "bun",
       "version": "2.6.0",
       "packageArguments": [
@@ -40,7 +40,7 @@
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "mcp-ts-template",
+      "identifier": "mcp-feishu-doc",
       "runtimeHint": "bun",
       "version": "2.6.0",
       "packageArguments": [

@@ -17,7 +17,7 @@ import { requestContextService } from '../src/utils/index.js';
 
 const APP_ID = 'cli_a9fe7d82b9f89bc6';
 const FILE_PATH = resolve(process.cwd(), 'docs/TECH_SHARING_FEISHU_MCP.md');
-const TITLE = '用 MCP 打通飞书文档：feishu-doc-mcp 的开发与实践';
+const TITLE = '用 MCP 打通飞书文档：mcp-feishu-doc 的开发与实践';
 
 async function main(): Promise<void> {
   composeContainer();

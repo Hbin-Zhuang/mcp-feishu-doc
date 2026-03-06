@@ -10,7 +10,7 @@ import { authContext } from '@/mcp-server/transports/auth/lib/authContext.js';
 /**
  * Checks if the current authentication context contains all the specified scopes.
  * If no authentication context is found (i.e., auth is disabled), it defaults
- * to allowing the operation, making it suitable for templates and demos.
+ * to allowing the operation for development convenience.
  * If auth is enabled, it strictly enforces scope checks.
  *
  * @param requiredScopes - An array of scope strings that are mandatory for the operation.
@@ -26,7 +26,7 @@ export function withRequiredScopes(requiredScopes: string[]): void {
 
   const store = authContext.getStore();
 
-  // If no auth store is found, it means auth is not configured. Default to allowed for template usability.
+  // If no auth store is found, it means auth is not configured. Default to allowed for development.
   if (!store || !store.authInfo) {
     logger.debug(
       'No authentication context found. Defaulting to allowed for demonstration purposes.',

@@ -1,5 +1,5 @@
 /**
- * @fileoverview A TaskStore implementation backed by the template's StorageService.
+ * @fileoverview A TaskStore implementation backed by the project's StorageService.
  * This provides persistent task storage that survives server restarts, using
  * whatever storage backend is configured (filesystem, Supabase, SurrealDB, etc.).
  *
@@ -115,7 +115,7 @@ export class StorageBackedTaskStore implements TaskStore {
 
   /**
    * Generates a unique task ID.
-   * Uses the template's idGenerator for consistent ID format.
+   * Uses the project's idGenerator for consistent ID format.
    */
   private generateTaskId(): string {
     // Generate a longer ID for global uniqueness (16 chars)
