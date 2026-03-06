@@ -43,14 +43,18 @@ export class PromptRegistry {
     for (const promptDef of allPromptDefinitions) {
       this.logger.debug(`Registering prompt: ${promptDef.name}`, context);
 
+      const registerOptions: Parameters<
+        typeof server.registerPrompt
+      >[1] = {
+        description: promptDef.description,
+      };
+      if (promptDef.argumentsSchema) {
+        registerOptions.argsSchema = promptDef.argumentsSchema.shape;
+      }
+
       server.registerPrompt(
         promptDef.name,
-        {
-          description: promptDef.description,
-          ...(promptDef.argumentsSchema && {
-            argsSchema: promptDef.argumentsSchema.shape,
-          }),
-        },
+        registerOptions,
         async (args: Record<string, unknown>) => {
           const messages = await promptDef.generate(args as never);
           return { messages };

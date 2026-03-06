@@ -1,7 +1,7 @@
 # 代理协议与架构规范
 
 **版本：** 2.4.7
-**目标项目：** mcp-ts-template
+**目标项目：** mcp-feishu-doc
 **最后更新：** 2024-10-15
 
 本文档定义了为此代码库做出贡献的操作规则。请严格遵循。
@@ -37,7 +37,7 @@
     - 保护不可移植的依赖。优先使用运行时无关的抽象（Hono + `@hono/mcp`、Fetch API）。
 
 6.  **使用引导获取缺失输入**
-    - 对缺失的参数使用 `sdkContext.elicitInput()`。参见 `template_madlibs_elicitation.tool.ts`。
+    - 对缺失的参数使用 `sdkContext.elicitInput()`。参见现有工具中的引导实现。
 
 ---
 
@@ -86,7 +86,7 @@
 **通用步骤（工具和资源）：**
 
 1. **文件位置**
-   - **工具：** `src/mcp-server/tools/definitions/[tool-name].tool.ts`（模板：`template-echo-message.tool.ts`）
+   - **工具：** `src/mcp-server/tools/definitions/[tool-name].tool.ts`（示例：`feishu-auth-url.tool.ts`）
    - **资源：** `src/mcp-server/resources/definitions/[resource-name].resource.ts`（模板：`echo.resource.ts`）
 
 2. **定义 ToolDefinition 或 ResourceDefinition**
@@ -123,7 +123,7 @@
 
 ## IV.A. 快速开始：创建您的第一个工具
 
-- [ ] **1. 研究模板：** [template-echo-message.tool.ts](src/mcp-server/tools/definitions/template-echo-message.tool.ts) — 理解：元数据 → 模式 → 逻辑 → 导出
+- [ ] **1. 研究示例：** [feishu-auth-url.tool.ts](src/mcp-server/tools/definitions/feishu-auth-url.tool.ts) — 理解：元数据 → 模式 → 逻辑 → 导出
 - [ ] **2. 创建文件：** `src/mcp-server/tools/definitions/[your-tool-name].tool.ts`（kebab-case）
 - [ ] **3. 定义元数据：** `TOOL_NAME`（snake_case）、`TOOL_TITLE`、`TOOL_DESCRIPTION`（面向 LLM）、`TOOL_ANNOTATIONS`（readOnly/idempotent 提示）
 - [ ] **4. 创建模式：** `InputSchema`/`OutputSchema` 作为 `z.object()` — **关键：** 所有字段都需要 `.describe()`
@@ -145,7 +145,7 @@
 
 > **注意：** Tasks API 是实验性的（SDK 1.24+），可能会在没有通知的情况下更改。
 
-- [ ] **1. 研究模板：** [template-async-countdown.task-tool.ts](src/mcp-server/tools/definitions/template-async-countdown.task-tool.ts)
+- [ ] **1. 研究示例：** 参考 `src/mcp-server/tasks/` 中的 TaskToolDefinition 实现
 - [ ] **2. 创建文件：** `src/mcp-server/tools/definitions/[name].task-tool.ts`（注意：`.task-tool.ts` 后缀）
 - [ ] **3. 定义模式：** `InputSchema` 和可选的 `OutputSchema`
 - [ ] **4. 实现任务处理器：**
@@ -214,7 +214,7 @@
 - 从 `@/utils/index.js` 导入：`logger`、`requestContextService`、`sanitization`、`fetchWithTimeout`、`measureToolExecution`、`pdfParser`、`frontmatterParser`、`markdown()`、`diffFormatter`、`tableFormatter`、`treeFormatter`
 - `ErrorHandler.tryCatch`（用于服务/设置代码，不用于工具/资源逻辑）
 
-**响应格式化器：** 简单：`[{ type: 'text', text: lines.join('\n') }]`。复杂：`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`（参见 `template-echo-message.tool.ts`）
+**响应格式化器：** 简单：`[{ type: 'text', text: lines.join('\n') }]`。复杂：`markdown()` 辅助函数、`diffFormatter`、`tableFormatter`、`treeFormatter`（参见飞书工具实现）
 
 #### 实用程序模块（`src/utils/`）
 

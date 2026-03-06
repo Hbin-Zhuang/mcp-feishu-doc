@@ -1,7 +1,7 @@
 {
-  "name": "feishu-doc-mcp",
+  "name": "mcp-feishu-doc",
   "version": "2.6.0",
-  "mcpName": "feishu-doc-mcp",
+  "mcpName": "mcp-feishu-doc",
   "description": "A Model Context Protocol (MCP) server for Feishu (Lark) cloud document and wiki management. Supports OAuth, Markdown upload, document reading/updating/deleting, search, and multi-app configuration.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,7 @@
     "dist"
   ],
   "bin": {
-    "feishu-doc-mcp": "dist/index.js"
+    "mcp-feishu-doc": "dist/index.js"
   },
   "exports": {
     ".": {
@@ -23,12 +23,12 @@
   "packageManager": "pnpm@10.19.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cyanheads/mcp-ts-template.git"
+    "url": "git+https://github.com/Hbin-Zhuang/mcp-feishu-doc.git"
   },
   "bugs": {
-    "url": "https://github.com/cyanheads/mcp-ts-template/issues"
+    "url": "https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues"
   },
-  "homepage": "https://github.com/cyanheads/mcp-ts-template#readme",
+  "homepage": "https://github.com/Hbin-Zhuang/mcp-feishu-doc#readme",
   "scripts": {
     "build": "tsup",
     "build:watch": "tsup --watch",
@@ -101,7 +101,7 @@
     "markdown",
     "oauth"
   ],
-  "author": "cyanheads <casey@caseyjhand.com> (https://github.com/cyanheads/mcp-ts-template#readme)",
+  "author": "Hbin-Zhuang (https://github.com/Hbin-Zhuang)",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=20.0.0",
@@ -110,7 +110,7 @@
   "depcheck": {
     "ignores": [
       "repomix",
-      "feishu-doc-mcp"
+      "mcp-feishu-doc"
     ]
   },
   "publishConfig": {

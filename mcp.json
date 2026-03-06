@@ -1,6 +1,6 @@
 {
     "mcpServers": {
-      "feishu-doc-mcp-local": {
+      "mcp-feishu-doc-local": {
         "command": "node",
         "args": ["./dist/index.js"],
         "env": {
