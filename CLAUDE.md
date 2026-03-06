@@ -132,8 +132,8 @@
 - [ ] **7. 应用身份验证：** 使用 `withToolAuth(['tool:name:read'], yourLogic)` 包装
 - [ ] **8. 导出 ToolDefinition：** 组合元数据、模式、逻辑、格式化器
 - [ ] **9. 注册：** 添加到 [index.ts](src/mcp-server/tools/definitions/index.ts) 中的 `allToolDefinitions`
-- [ ] **10. 质量检查：** `npm run typecheck && npm run lint`
-- [ ] **11. 测试：** `npm run dev:stdio` 或 `dev:http`，使用 MCP 客户端验证
+- [ ] **10. 质量检查：** `pnpm run typecheck && pnpm run lint`
+- [ ] **11. 测试：** `pnpm run dev:stdio` 或 `pnpm run dev:http`，使用 MCP 客户端验证
 
 参见章节 IV 获取完整工作流程，章节 XIV 获取全面检查清单。
 
@@ -292,15 +292,15 @@ EOF
 
 ## X. 检查与工作流程命令
 
-| 命令                       | 用途                     |
-| -------------------------- | ------------------------ |
-| `npm run rebuild`          | 清理并重建（依赖更改后） |
-| `npm run typecheck`        | TypeScript 类型检查      |
-| `npm run lint`             | ESLint 代码检查          |
-| `npm run test`             | 单元/集成测试            |
-| `npm run dev:stdio/http`   | 开发模式                 |
-| `npm run start:stdio/http` | 生产模式（构建后）       |
-| `npm run build`            | 生产构建                 |
+| 命令                         | 用途                     |
+| ---------------------------- | ------------------------ |
+| `pnpm run rebuild`           | 清理并重建（依赖更改后） |
+| `pnpm run typecheck`         | TypeScript 类型检查      |
+| `pnpm run lint`              | ESLint 代码检查          |
+| `pnpm run test`              | 单元/集成测试            |
+| `pnpm run dev:stdio/http`    | 开发模式                 |
+| `pnpm run start:stdio/http`  | 生产模式（构建后）       |
+| `pnpm run build`             | 生产构建                 |
 
 ---
 
@@ -341,9 +341,9 @@ EOF
 - [ ] 使用带有 `appContext` 的 `logger`，使用 `StorageService`（DI）进行持久化
 - [ ] 使用 `sdkContext.elicitInput()`/`createMessage()` 进行客户端交互
 - [ ] 在 `index.ts` 桶中注册
-- [ ] 添加/更新测试（`npm run test`）
-- [ ] **运行 `npm run typecheck && npm run lint`**（类型检查、代码检查）
-- [ ] 本地传输冒烟测试（`dev:stdio`/`http`）
-- [ ] 构建并验证（`npm run build`）
+- [ ] 添加/更新测试（`pnpm run test`）
+- [ ] **运行 `pnpm run typecheck && pnpm run lint`**（类型检查、代码检查）
+- [ ] 本地传输冒烟测试（`pnpm run dev:stdio`/`dev:http`）
+- [ ] 构建并验证（`pnpm run build`）
 
 请严格遵循本文档。
