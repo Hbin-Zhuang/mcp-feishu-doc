@@ -14,11 +14,8 @@ import type {
   ToolDefinition,
 } from '@/mcp-server/tools/utils/index.js';
 import { withToolAuth } from '@/mcp-server/transports/auth/lib/withAuth.js';
-import { StorageService } from '@/container/tokens.js';
-
-import type { StoredFeishuAuth } from '@/services/feishu/types.js';
-import type { StorageService as IStorageService } from '@/storage/core/StorageService.js';
-import { McpError, JsonRpcErrorCode } from '@/types-global/errors.js';
+import { FeishuServiceToken } from '@/container/tokens.js';
+import type { FeishuService } from '@/services/feishu/index.js';
 import {
   markdown,
   type RequestContext,
@@ -91,34 +88,26 @@ async function getUserInfoLogic(
     appId: input.appId ?? 'default',
   });
 
-  // 直接从存储中获取用户信息，避免通过 FeishuService
-  const storage = container.resolve<IStorageService>(StorageService);
+  const feishuService = container.resolve<FeishuService>(
+    FeishuServiceToken as symbol,
+  );
   const ctx = requestContextService.createRequestContext({
     operation: 'feishu.getUserInfo',
     tenantId: 'feishu-service',
   });
 
-  const appId = input.appId || 'cli_a9e211f948381bdf';
-  const auth = await storage.get<StoredFeishuAuth>(`feishu/auth/${appId}`, ctx);
-
-  if (!auth) {
-    throw new McpError(JsonRpcErrorCode.InvalidParams, `应用 ${appId} 未认证`);
-  }
-
-  if (!auth.userInfo) {
-    throw new McpError(JsonRpcErrorCode.InvalidParams, '用户信息不存在');
-  }
+  const userInfo = await feishuService.getUserInfo(ctx, input.appId);
 
   logger.info('获取用户信息成功', {
     ...appContext,
-    userName: auth.userInfo.name,
+    userName: userInfo.name,
   });
 
   return {
-    userId: auth.userInfo.userId,
-    name: auth.userInfo.name,
-    email: auth.userInfo.email,
-    avatarUrl: auth.userInfo.avatarUrl,
+    userId: userInfo.userId || userInfo.name || 'unknown',
+    name: userInfo.name,
+    email: userInfo.email,
+    avatarUrl: userInfo.avatarUrl,
   };
 }
 

@@ -420,6 +420,14 @@ export interface StoredDocumentMeta {
   updatedAt: number;
   /** 最后上传时间戳（用于冲突检测） */
   lastUploadedAt: number;
+  /** 上传时的文档修订版本号（用于冲突检测，替代 lastUploadedAt） */
+  lastRevisionId?: number;
+  /** 目标类型（drive 或 wiki），用于文档更新时重新定位 */
+  targetType?: 'drive' | 'wiki';
+  /** 目标 ID（文件夹 token 或知识库空间 ID） */
+  targetId?: string;
+  /** 知识库父节点 token */
+  parentNodeToken?: string;
 }
 
 // ============================================================================

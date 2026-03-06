@@ -86,7 +86,7 @@ export async function startStdioTransport(
     if (config.feishu?.oauthCallbackUrl) {
       try {
         logger.info('Starting OAuth callback server for Feishu...', operationContext);
-        oauthCallbackServer = await startOAuthCallbackServer(operationContext);
+        oauthCallbackServer = startOAuthCallbackServer(operationContext);
         logger.info('OAuth callback server started successfully', operationContext);
       } catch (err) {
         logger.warning(

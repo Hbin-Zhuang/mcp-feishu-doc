@@ -169,6 +169,18 @@ export class FeishuService implements IFeishuService {
       config,
     );
 
+    // 获取文档实际的 revisionId 用于冲突检测
+    let lastRevisionId: number | undefined;
+    try {
+      const meta = await this.apiProvider!.getDocumentMeta(
+        validAuth.accessToken,
+        feishuDoc.documentId,
+      );
+      lastRevisionId = meta.revisionId;
+    } catch {
+      // 非关键错误，忽略
+    }
+
     await this.storeDocumentMeta(
       feishuDoc.documentId,
       {
@@ -179,6 +191,10 @@ export class FeishuService implements IFeishuService {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         lastUploadedAt: Date.now(),
+        lastRevisionId,
+        targetType: config.targetType,
+        ...(config.targetId ? { targetId: config.targetId } : {}),
+        ...(config.parentNodeToken ? { parentNodeToken: config.parentNodeToken } : {}),
       },
       ctx,
     );
@@ -193,7 +209,7 @@ export class FeishuService implements IFeishuService {
     };
   }
 
-  /** updateDocument method 更新文档. */
+  /** updateDocument method 更新文档（删除旧文档并在原位置重建）. */
   async updateDocument(
     documentId: string,
     document: MarkdownDocument,
@@ -227,11 +243,19 @@ export class FeishuService implements IFeishuService {
           success: false,
           documentId,
           error:
-            '检测到文档冲突：文档在上次上传后已被修改。使用 force=true 强制覆盖。',
+            '检测到文档冲突：文档在上次上传后已被修改（revision_id 不匹配）。使用 force=true 强制覆盖。',
           conflictDetected: true,
         };
       }
     }
+
+    // 从存储中读取文档的原始位置信息
+    const storedMeta = await this.storage.get<{
+      title?: string;
+      targetType?: 'drive' | 'wiki';
+      targetId?: string;
+      parentNodeToken?: string;
+    }>(`feishu/doc/${documentId}`, ctx);
 
     const baseDirectory =
       document.workingDirectory ||
@@ -250,15 +274,58 @@ export class FeishuService implements IFeishuService {
       },
     );
 
+    const title =
+      document.title || processResult.extractedTitle || storedMeta?.title || 'Untitled';
+
+    // 使用存储的位置信息（优先级：调用参数 > 存储元数据）
+    const targetType = config.targetType || storedMeta?.targetType || 'drive';
+    const targetId = config.targetId || storedMeta?.targetId;
+    const parentNodeToken =
+      config.parentNodeToken || storedMeta?.parentNodeToken;
+
     await this.rateLimiter!.throttle('document');
+
     const feishuDoc = await this.apiProvider!.updateDocument(
       validAuth.accessToken,
       documentId,
       processResult.content,
+      title,
+      targetType,
+      targetId,
+      parentNodeToken,
     );
+
+    const uploadedFiles = await this.uploadLocalFiles(
+      validAuth.accessToken,
+      processResult.localFiles,
+      config,
+    );
+
+    // 获取新文档的 revisionId
+    let lastRevisionId: number | undefined;
+    try {
+      const meta = await this.apiProvider!.getDocumentMeta(
+        validAuth.accessToken,
+        feishuDoc.documentId,
+      );
+      lastRevisionId = meta.revisionId;
+    } catch {
+      // 非关键错误，忽略
+    }
+
     await this.updateDocumentMeta(
-      documentId,
-      { updatedAt: Date.now(), lastUploadedAt: Date.now() },
+      feishuDoc.documentId,
+      {
+        documentId: feishuDoc.documentId,
+        url: feishuDoc.url,
+        title,
+        updatedAt: Date.now(),
+        lastUploadedAt: Date.now(),
+        lastRevisionId,
+        targetType,
+        ...(targetId ? { targetId } : {}),
+        ...(parentNodeToken ? { parentNodeToken } : {}),
+      },
       ctx,
     );
 
@@ -266,7 +333,8 @@ export class FeishuService implements IFeishuService {
       success: true,
       documentId: feishuDoc.documentId,
       url: feishuDoc.url,
-      title: feishuDoc.title,
+      title,
+      uploadedFiles,
     };
   }
 
@@ -594,6 +662,141 @@ export class FeishuService implements IFeishuService {
   }
 
   /**
+   * getDocumentContent method 读取飞书文档文本内容.
+   */
+  async getDocumentContent(
+    context: RequestContext,
+    documentId: string,
+    appId?: string,
+  ): Promise<{ title: string; content: string; revisionId: number }> {
+    this.ensureProviders();
+
+    const finalAppId = appId || (await this.getDefaultAppId(context));
+    if (!finalAppId)
+      throw new McpError(JsonRpcErrorCode.InvalidParams, '未配置应用 ID');
+
+    const auth = await this.getAuth(finalAppId, context);
+    if (!auth)
+      throw new McpError(
+        JsonRpcErrorCode.InvalidParams,
+        `应用 ${finalAppId} 未认证`,
+      );
+
+    const validAuth = await this.ensureValidToken(auth, context);
+    await this.rateLimiter!.throttle('block');
+    return this.apiProvider!.getDocumentContent(
+      validAuth.accessToken,
+      documentId,
+    );
+  }
+
+  /**
+   * searchDocuments method 搜索文档.
+   */
+  async searchDocuments(
+    context: RequestContext,
+    query: string,
+    count = 20,
+    appId?: string,
+  ): Promise<
+    Array<{
+      token: string;
+      name: string;
+      url: string;
+      type: string;
+      ownerName: string;
+    }>
+  > {
+    this.ensureProviders();
+
+    const finalAppId = appId || (await this.getDefaultAppId(context));
+    if (!finalAppId)
+      throw new McpError(JsonRpcErrorCode.InvalidParams, '未配置应用 ID');
+
+    const auth = await this.getAuth(finalAppId, context);
+    if (!auth)
+      throw new McpError(
+        JsonRpcErrorCode.InvalidParams,
+        `应用 ${finalAppId} 未认证`,
+      );
+
+    const validAuth = await this.ensureValidToken(auth, context);
+    await this.rateLimiter!.throttle('document');
+    return this.apiProvider!.searchDocuments(
+      validAuth.accessToken,
+      query,
+      count,
+    );
+  }
+
+  /**
+   * deleteDocumentFile method 删除飞书文档.
+   */
+  async deleteDocumentFile(
+    context: RequestContext,
+    documentId: string,
+    appId?: string,
+  ): Promise<void> {
+    this.ensureProviders();
+
+    const finalAppId = appId || (await this.getDefaultAppId(context));
+    if (!finalAppId)
+      throw new McpError(JsonRpcErrorCode.InvalidParams, '未配置应用 ID');
+
+    const auth = await this.getAuth(finalAppId, context);
+    if (!auth)
+      throw new McpError(
+        JsonRpcErrorCode.InvalidParams,
+        `应用 ${finalAppId} 未认证`,
+      );
+
+    const validAuth = await this.ensureValidToken(auth, context);
+    await this.rateLimiter!.throttle('document');
+    await this.apiProvider!.deleteDocument(validAuth.accessToken, documentId, 'docx');
+
+    // 清除本地存储的文档元数据
+    try {
+      await this.storage.delete(`feishu/doc/${documentId}`, context);
+    } catch {
+      // 非关键错误，忽略
+    }
+  }
+
+  /**
+   * addApp method 添加/配置新的飞书应用（存储 appId + appSecret 到 Storage）.
+   */
+  async addApp(
+    context: RequestContext,
+    appId: string,
+    appSecret: string,
+  ): Promise<{ success: boolean; appId: string }> {
+    if (!appId || !appSecret) {
+      throw new McpError(
+        JsonRpcErrorCode.InvalidParams,
+        'appId 和 appSecret 均不能为空',
+      );
+    }
+
+    // 存储应用配置（appSecret 以供 token 刷新时使用）
+    const configKey = `feishu/config/app/${appId}`;
+    await this.storage.set(configKey, { appSecret }, context);
+    this.setCache(configKey, { appSecret });
+
+    // 维护应用列表（若尚未添加）
+    const appListKey = 'feishu/config/app_list';
+    const existingApps =
+      (await this.storage.get<string[]>(appListKey, context)) ?? [];
+    if (!existingApps.includes(appId)) {
+      existingApps.push(appId);
+      await this.storage.set(appListKey, existingApps, context);
+      this.setCache(appListKey, existingApps);
+    }
+
+    logger.info('飞书应用配置已保存', { ...context, appId });
+    return { success: true, appId };
+  }
+
+  /**
    * batchUploadMarkdown method 批量上传 Markdown 文档.
    * @param config 批量上传配置
    * @param context 请求上下文
@@ -885,7 +1088,7 @@ export class FeishuService implements IFeishuService {
     documentId: string,
     ctx: RequestContext,
   ): Promise<boolean> {
-    const storedMeta = await this.storage.get<{ lastUploadedAt: number }>(
+    const storedMeta = await this.storage.get<{ lastRevisionId?: number; lastUploadedAt: number }>(
       `feishu/doc/${documentId}`,
       ctx,
     );
@@ -894,6 +1097,10 @@ export class FeishuService implements IFeishuService {
       accessToken,
       documentId,
     );
+    // 优先使用 revisionId 比对（更准确）；若旧数据无 revisionId 则回退到时间戳比对
+    if (storedMeta.lastRevisionId !== undefined) {
+      return docMeta.revisionId > storedMeta.lastRevisionId;
+    }
     return docMeta.updatedAt > storedMeta.lastUploadedAt;
   }
 

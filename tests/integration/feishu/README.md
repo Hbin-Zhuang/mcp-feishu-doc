@@ -27,7 +27,7 @@
    ```bash
    FEISHU_DEFAULT_APP_ID=cli_your_app_id
    FEISHU_DEFAULT_APP_SECRET=your_app_secret
-   FEISHU_OAUTH_CALLBACK_URL=http://localhost:3010/oauth/callback
+   FEISHU_OAUTH_CALLBACK_URL=http://localhost:3010/oauth/feishu/callback
    ```
 
 ## 运行集成测试

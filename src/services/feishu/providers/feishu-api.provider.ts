@@ -19,6 +19,7 @@ import {
   FEISHU_CONFIG,
   TOKEN_EXPIRED_CODES,
   FEISHU_ERROR_MESSAGES,
+  DOC_IMAGE_EMBED_LIMITS,
 } from '../constants.js';
 import { McpError, JsonRpcErrorCode } from '@/types-global/errors.js';
 import { logger, requestContextService } from '@/utils/index.js';
@@ -218,7 +219,8 @@ export class FeishuApiProvider implements IFeishuApiProvider {
         name: string;
         avatar_url: string;
         email: string;
-        user_id: string;
+        user_id?: string;
+        open_id?: string;
       }>
     >(FEISHU_CONFIG.USER_INFO_URL, accessToken, { method: 'GET' });
 
@@ -226,11 +228,15 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       throw new McpError(JsonRpcErrorCode.InternalError, '获取用户信息失败');
     }
 
+    const { data } = response;
+    // user_id 可能为空（个人/轻量版），使用 open_id 兜底
+    const userId = data.user_id || data.open_id || '';
+
     return {
-      userId: response.data.user_id,
-      name: response.data.name,
-      email: response.data.email,
-      avatarUrl: response.data.avatar_url,
+      userId,
+      name: data.name,
+      email: data.email,
+      avatarUrl: data.avatar_url,
     };
   }
 
@@ -388,27 +394,40 @@ export class FeishuApiProvider implements IFeishuApiProvider {
 
   /**
    * updateDocument method 更新飞书文档.
-   * 注意：目前暂不支持更新，需要重新创建文档
+   * 策略：删除旧文档后在相同位置重新创建（飞书不提供直接替换内容的 API）.
+   * 调用方需传入 targetType/targetId/parentNodeToken 以便重建到正确位置.
    */
-  public updateDocument(
-    _accessToken: string,
-    _documentId: string,
-    _content: string,
+  public async updateDocument(
+    accessToken: string,
+    documentId: string,
+    content: string,
+    title: string,
+    targetType: 'drive' | 'wiki' = 'drive',
+    targetId?: string,
+    parentNodeToken?: string,
   ): Promise<FeishuDocument> {
-    // TODO: 实现文档更新功能
-    throw new McpError(
-      JsonRpcErrorCode.InternalError,
-      '暂不支持文档更新，请重新创建文档',
+    // 第一步：删除旧文档
+    await this.deleteDocument(accessToken, documentId, 'docx');
+
+    // 第二步：在原位置重新创建文档
+    return this.createDocument(
+      accessToken,
+      title,
+      content,
+      targetType,
+      targetId,
+      parentNodeToken,
     );
   }
 
   /**
    * getDocumentMeta method 获取文档元数据.
+   * 使用飞书 docx API 返回的 revision_id 作为版本标识，用于冲突检测.
    */
   public async getDocumentMeta(
     accessToken: string,
     documentId: string,
-  ): Promise<{ documentId: string; updatedAt: number }> {
+  ): Promise<{ documentId: string; updatedAt: number; revisionId: number }> {
     const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}`;
     const response = await this.requestWithAuth<
       FeishuApiResponse<{
@@ -416,14 +435,354 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       }>
     >(url, accessToken, { method: 'GET' });
 
-    if (response.code !== 0) {
+    if (response.code !== 0 || !response.data) {
       throw new McpError(JsonRpcErrorCode.InternalError, '获取文档元数据失败');
     }
 
     return {
       documentId,
-      updatedAt: Date.now(), // 飞书 API 不直接返回更新时间，需要通过其他方式获取
+      updatedAt: Date.now(),
+      revisionId: response.data.document.revision_id,
     };
+  }
+
+  /**
+   * deleteDocument method 删除云空间文档.
+   * @param accessToken 访问令牌
+   * @param fileToken 文档 token（即 documentId）
+   * @param fileType 文件类型，docx 或 file
+   */
+  public async deleteDocument(
+    accessToken: string,
+    fileToken: string,
+    fileType: 'docx' | 'file' = 'docx',
+  ): Promise<void> {
+    const url = `${FEISHU_CONFIG.BASE_URL}/drive/v1/files/${fileToken}`;
+    const response = await this.requestWithAuth<FeishuApiResponse>(
+      `${url}?type=${fileType}`,
+      accessToken,
+      { method: 'DELETE' },
+    );
+
+    if (response.code !== 0) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `删除文档失败: ${response.msg || '未知错误'}`,
+      );
+    }
+  }
+
+  /**
+   * getDocumentContent method 获取文档纯文本内容（通过 blocks API）.
+   * 遍历文档 block 树，提取所有文本内容，返回近似 Markdown.
+   */
+  public async getDocumentContent(
+    accessToken: string,
+    documentId: string,
+  ): Promise<{ title: string; content: string; revisionId: number }> {
+    // 获取文档基础信息
+    const meta = await this.getDocumentMeta(accessToken, documentId);
+
+    // 获取文档所有 block（按页读取）
+    const allBlocks: Array<{
+      block_id: string;
+      block_type: number;
+      parent_id: string;
+      children?: string[];
+      [key: string]: unknown;
+    }> = [];
+
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({ page_size: '200', document_revision_id: '-1' });
+      if (pageToken) params.set('page_token', pageToken);
+      const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks?${params.toString()}`;
+      const resp = await this.requestWithAuth<
+        FeishuApiResponse<{
+          items: Array<{
+            block_id: string;
+            block_type: number;
+            parent_id: string;
+            children?: string[];
+            [key: string]: unknown;
+          }>;
+          has_more: boolean;
+          page_token?: string;
+        }>
+      >(url, accessToken, { method: 'GET' });
+
+      if (resp.code !== 0 || !resp.data) {
+        throw new McpError(
+          JsonRpcErrorCode.InternalError,
+          `获取文档内容失败: ${resp.msg || '未知错误'}`,
+        );
+      }
+
+      allBlocks.push(...resp.data.items);
+      pageToken = resp.data.has_more ? resp.data.page_token : undefined;
+    } while (pageToken);
+
+    // 将 block 树转换为 Markdown 文本（含图片 base64）
+    const lines = await this.buildDocumentLines(
+      accessToken,
+      allBlocks,
+    );
+
+    // 获取标题（首个 Page block 的标题）
+    const pageBlock = allBlocks.find((b) => b.block_type === 1);
+    const titleEl = pageBlock as { page?: { elements?: Array<{ text_run?: { content?: string } }> } } | undefined;
+    const title = titleEl?.page?.elements?.map((e) => e.text_run?.content || '').join('') || '';
+
+    return {
+      title: title || documentId,
+      content: lines.filter(Boolean).join('\n\n'),
+      revisionId: meta.revisionId,
+    };
+  }
+
+  /**
+   * searchDocuments method 搜索云空间文档.
+   * 使用飞书 Drive 搜索 API.
+   */
+  public async searchDocuments(
+    accessToken: string,
+    query: string,
+    count = 20,
+  ): Promise<
+    Array<{
+      token: string;
+      name: string;
+      url: string;
+      type: string;
+      ownerName: string;
+    }>
+  > {
+    const url = `${FEISHU_CONFIG.BASE_URL}/suite/docs-api/search/object`;
+    const response = await this.requestWithAuth<
+      FeishuApiResponse<{
+        docs_entities?: Array<{
+          doc_token: string;
+          doc_type: string;
+          title: string;
+          url: string;
+          owner_id?: string;
+        }>;
+        has_more?: boolean;
+      }>
+    >(url, accessToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_key: query,
+        count,
+        docs_types: ['docx', 'doc'],
+      }),
+    });
+
+    if (response.code !== 0 || !response.data) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `搜索文档失败: ${response.msg || '未知错误'}`,
+      );
+    }
+
+    return (response.data.docs_entities ?? []).map((doc) => ({
+      token: doc.doc_token,
+      name: doc.title,
+      url: doc.url,
+      type: doc.doc_type,
+      ownerName: doc.owner_id ?? '',
+    }));
+  }
+
+  /**
+   * buildDocumentLines method 构建文档行（含图片 base64 data URI）.
+   * 限制：最多内联 N 张、单张 ≤ 2.5MB、总字节 ≤ 5MB，超出用占位符.
+   */
+  private async buildDocumentLines(
+    accessToken: string,
+    blocks: Array<Record<string, unknown>>,
+  ): Promise<string[]> {
+    type BlockContent =
+      | { type: 'text'; value: string }
+      | { type: 'image'; fileToken: string };
+
+    const getBlockContent = (block: Record<string, unknown>): BlockContent | null => {
+      const content = this.extractBlockContent(block);
+      if (!content) return null;
+      return content;
+    };
+
+    const items: BlockContent[] = [];
+    for (const block of blocks) {
+      const c = getBlockContent(block);
+      if (c) items.push(c);
+    }
+
+    const imageItems = items.filter(
+      (i): i is { type: 'image'; fileToken: string } => i.type === 'image',
+    );
+    const tokensToFetch = imageItems
+      .slice(0, DOC_IMAGE_EMBED_LIMITS.maxImages)
+      .map((i) => i.fileToken);
+
+    const tokenToBase64 = new Map<string, string>();
+    if (tokensToFetch.length > 0) {
+      const urlMap = await this.batchGetTmpDownloadUrls(accessToken, tokensToFetch);
+      let totalBytes = 0;
+      const maxSingle = DOC_IMAGE_EMBED_LIMITS.maxSingleImageBytes;
+      const maxTotal = DOC_IMAGE_EMBED_LIMITS.maxTotalBytes;
+
+      for (const token of tokensToFetch) {
+        if (totalBytes >= maxTotal) break;
+        const url = urlMap.get(token);
+        if (!url) continue;
+        const result = await this.fetchImageAsBase64(url, accessToken);
+        if (!result) continue;
+        if (result.byteLength > maxSingle) continue;
+        if (totalBytes + result.byteLength > maxTotal) continue;
+        tokenToBase64.set(token, result.dataUri);
+        totalBytes += result.byteLength;
+      }
+    }
+
+    const lines: string[] = [];
+    for (const item of items) {
+      if (item.type === 'text') {
+        lines.push(item.value);
+      } else {
+        const dataUri = tokenToBase64.get(item.fileToken);
+        lines.push(
+          dataUri ? `![image](${dataUri})` : `![image](feishu-image)`,
+        );
+      }
+    }
+    return lines;
+  }
+
+  /**
+   * batchGetTmpDownloadUrls method 批量获取素材临时下载链接.
+   */
+  private async batchGetTmpDownloadUrls(
+    accessToken: string,
+    fileTokens: string[],
+  ): Promise<Map<string, string>> {
+    if (fileTokens.length === 0) return new Map();
+
+    const params = new URLSearchParams();
+    fileTokens.forEach((t) => params.append('file_tokens', t));
+    const url = `${FEISHU_CONFIG.BASE_URL}/drive/v1/medias/batch_get_tmp_download_url?${params.toString()}`;
+
+    const resp = await this.requestWithAuth<
+      FeishuApiResponse<{
+        tmp_download_urls?: Array<{
+          file_token: string;
+          tmp_download_url: string;
+        }>;
+      }>
+    >(url, accessToken, { method: 'GET' });
+
+    if (resp.code !== 0 || !resp.data?.tmp_download_urls) {
+      return new Map();
+    }
+
+    const map = new Map<string, string>();
+    for (const u of resp.data.tmp_download_urls) {
+      if (u.file_token && u.tmp_download_url) {
+        map.set(u.file_token, u.tmp_download_url);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * fetchImageAsBase64 method 从临时 URL 拉取图片并转为 base64 data URI.
+   * 单张超过 maxSingleImageBytes 时返回 null（使用占位符）.
+   */
+  private async fetchImageAsBase64(
+    tmpUrl: string,
+    accessToken: string,
+  ): Promise<{ dataUri: string; byteLength: number } | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(tmpUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      const blob = await response.arrayBuffer();
+      const bytes = new Uint8Array(blob);
+      const byteLength = bytes.length;
+      if (byteLength > DOC_IMAGE_EMBED_LIMITS.maxSingleImageBytes) {
+        return null;
+      }
+      const b64 = Buffer.from(bytes).toString('base64');
+      const contentType =
+        response.headers.get('content-type') || 'image/png';
+      return {
+        dataUri: `data:${contentType};base64,${b64}`,
+        byteLength,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * extractBlockContent method 从 block 提取内容（文本或图片 file_token）.
+   */
+  private extractBlockContent(
+    block: Record<string, unknown>,
+  ): { type: 'text'; value: string } | { type: 'image'; fileToken: string } | null {
+    const blockType = block.block_type as number;
+    const getTextFromElements = (elements?: Array<{ text_run?: { content?: string } }>) =>
+      (elements ?? []).map((e) => e.text_run?.content || '').join('');
+
+    switch (blockType) {
+      case 2: {
+        const b = block as { text?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        const v = getTextFromElements(b.text?.elements);
+        return v ? { type: 'text', value: v } : null;
+      }
+      case 3: {
+        const b = block as { heading1?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `# ${getTextFromElements(b.heading1?.elements)}` };
+      }
+      case 4: {
+        const b = block as { heading2?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `## ${getTextFromElements(b.heading2?.elements)}` };
+      }
+      case 5: {
+        const b = block as { heading3?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `### ${getTextFromElements(b.heading3?.elements)}` };
+      }
+      case 10: {
+        const b = block as { bullet?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `- ${getTextFromElements(b.bullet?.elements)}` };
+      }
+      case 11: {
+        const b = block as { ordered?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `1. ${getTextFromElements(b.ordered?.elements)}` };
+      }
+      case 12: {
+        const b = block as { code?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `\`\`\`\n${getTextFromElements(b.code?.elements)}\n\`\`\`` };
+      }
+      case 15: {
+        const b = block as { quote?: { elements?: Array<{ text_run?: { content?: string } }> } };
+        return { type: 'text', value: `> ${getTextFromElements(b.quote?.elements)}` };
+      }
+      case 22: {
+        const b = block as { image?: { file_token?: string } };
+        const ft = b.image?.file_token;
+        return ft ? { type: 'image', fileToken: ft } : null;
+      }
+      default:
+        return null;
+    }
   }
 
   /**

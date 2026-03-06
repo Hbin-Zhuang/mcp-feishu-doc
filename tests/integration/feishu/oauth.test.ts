@@ -4,7 +4,7 @@
  * @module tests/integration/feishu/oauth.test
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import 'reflect-metadata';
 import { config } from '@/config/index.js';
 import { composeContainer } from '@/container/index.js';
@@ -19,21 +19,6 @@ import { requestContextService } from '@/utils/index.js';
 const hasFeishuCredentials = !!(
   config.feishu?.defaultAppId && config.feishu?.defaultAppSecret
 );
-
-// 测试配置
-const TEST_CONFIG = {
-  // 测试用的重定向 URI
-  redirectUri:
-    config.feishu?.oauthCallbackUrl || 'http://localhost:3000/oauth/callback',
-  // 测试租户 ID
-  tenantId: 'oauth-test-tenant',
-  // 模拟的授权码（用于错误测试）
-  invalidCode: 'invalid_test_code_12345',
-  // 模拟的刷新令牌（用于错误测试）
-  invalidRefreshToken: 'invalid_refresh_token_12345',
-  // 测试超时时间
-  testTimeoutMs: 30000,
-} as const;
 
 describe('OAuth 集成测试', () => {
   let feishuApiProvider: FeishuApiProvider;

@@ -279,9 +279,9 @@ export function createOAuthCallbackApp<TBindings extends object = HonoNodeBindin
 /**
  * 启动 OAuth 回调服务器（后台运行）
  */
-export async function startOAuthCallbackServer(
+export function startOAuthCallbackServer(
   parentContext: RequestContext,
-): Promise<ServerType> {
+): ServerType {
   const transportContext = {
     ...parentContext,
     component: 'OAuthCallbackServer',

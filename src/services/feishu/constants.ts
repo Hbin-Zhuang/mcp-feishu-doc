@@ -47,7 +47,7 @@ export const FEISHU_CONFIG: FeishuConfig & {
   DEFAULT_APP_SECRET: process.env.FEISHU_DEFAULT_APP_SECRET || '',
   OAUTH_CALLBACK_URL:
     process.env.FEISHU_OAUTH_CALLBACK_URL ||
-    'http://localhost:3000/oauth/callback',
+    'http://localhost:3010/oauth/feishu/callback',
 
   // 频率限制配置
   RATE_LIMIT_ENABLED: process.env.FEISHU_RATE_LIMIT_ENABLED !== 'false',
@@ -177,6 +177,18 @@ export const FILE_SIZE_LIMITS = {
   image: 20 * 1024 * 1024, // 20MB
   file: 100 * 1024 * 1024, // 100MB
   markdown: 10 * 1024 * 1024, // 10MB
+};
+
+/**
+ * DOC_IMAGE_EMBED_LIMITS const 文档内联图片限制（避免 payload 过大）.
+ */
+export const DOC_IMAGE_EMBED_LIMITS = {
+  /** 最多内联图片数量 */
+  maxImages: 15,
+  /** 单张图片最大字节（2.5MB），超出用占位符 */
+  maxSingleImageBytes: 2.5 * 1024 * 1024,
+  /** 所有内联图片总字节上限（10MB），超出用占位符 */
+  maxTotalBytes: 10 * 1024 * 1024,
 };
 
 /**
