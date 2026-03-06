@@ -1,6 +1,6 @@
 {
   "name": "mcp-feishu-doc",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "mcpName": "mcp-feishu-doc",
   "description": "A Model Context Protocol (MCP) server for Feishu (Lark) cloud document and wiki management. Supports OAuth, Markdown upload, document reading/updating/deleting, search, and multi-app configuration.",
   "main": "dist/index.js",
@@ -152,4 +152,3 @@
     "zod": "^4.1.13"
   }
 }
-
