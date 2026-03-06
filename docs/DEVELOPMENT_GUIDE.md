@@ -215,25 +215,25 @@ logic: withToolAuth(['tool:name:action'], myLogic),
 
 ```bash
 # 安装依赖
-npm install
+pnpm install
 
 # 开发模式
-npm run dev:stdio    # STDIO 传输
-npm run dev:http     # HTTP 传输
+pnpm run dev:stdio   # STDIO 传输
+pnpm run dev:http    # HTTP 传输
 
 # 构建和检查
-npm run build        # 构建项目
-npm run typecheck    # 类型检查
-npm run lint         # 代码检查
-npm run test         # 运行测试
+pnpm run build       # 构建项目
+pnpm run typecheck   # 类型检查
+pnpm run lint        # 代码检查
+pnpm run test        # 运行测试
 
 # 生产模式
-npm run start:stdio
-npm run start:http
+pnpm run start:stdio
+pnpm run start:http
 
 # 清理和重建
-npm run clean        # 清理 dist 目录
-npm run rebuild      # 清理并重新构建
+pnpm run clean       # 清理 dist 目录
+pnpm run rebuild     # 清理并重新构建
 ```
 
 ## 环境变量

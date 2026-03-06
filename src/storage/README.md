@@ -421,7 +421,7 @@ This guide walks through creating a new storage provider. For a complete example
 ### Prerequisites
 
 - Familiarity with [IStorageProvider](core/IStorageProvider.ts) interface
-- Provider-specific SDK installed (e.g., `bun add redis`)
+- Provider-specific SDK installed (e.g., `pnpm add redis`)
 - Environment variables planned
 
 ### Step 1: Create Provider File
@@ -699,7 +699,7 @@ describe('{Provider}Provider Specific Tests', () => {
 });
 ```
 
-Run tests: `bun run test tests/storage/providers/{provider-name}/`
+Run tests: `pnpm run test tests/storage/providers/{provider-name}/`
 
 ### Step 7: Documentation
 

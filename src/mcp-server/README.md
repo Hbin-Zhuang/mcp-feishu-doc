@@ -491,10 +491,10 @@ MCP_TRANSPORT_TYPE=stdio
 
 ```bash
 # Development
-bun run dev:stdio
+pnpm run dev:stdio
 
 # Production
-bun run start:stdio
+pnpm run start:stdio
 ```
 
 ---

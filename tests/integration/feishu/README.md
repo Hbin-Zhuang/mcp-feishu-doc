@@ -37,7 +37,7 @@
 1. **启动 MCP 服务**
 
    ```bash
-   npm run dev:http
+   pnpm run dev:http
    ```
 
 2. **测试 OAuth 认证**

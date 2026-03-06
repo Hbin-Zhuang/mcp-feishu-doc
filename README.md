@@ -1,13 +1,13 @@
 <div align="center">
   <h1>mcp-feishu-doc</h1>
   <p><b>飞书（Lark）云文档与知识库管理的 MCP 服务器。支持 OAuth 授权、Markdown 上传/更新/删除、文档搜索、多应用配置，以及本地和边缘（Cloudflare Workers）运行。</b>
-  <div>16 个飞书工具</div>
+  <div>15 个飞书工具</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.2.21-blueviolet.svg?style=flat-square)](https://bun.sh/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
+[![Version](https://img.shields.io/badge/Version-2.6.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
 
 </div>
 
@@ -112,7 +112,8 @@
 
 ### 前置要求
 
-- [Node.js v20.0.0](https://nodejs.org/) 或更高版本。
+- [Node.js](https://nodejs.org/) v20.0.0 或更高版本
+- [pnpm](https://pnpm.io/) v10.0.0 或更高版本
 
 ### 安装
 
@@ -131,7 +132,7 @@ cd mcp-feishu-doc
 3.  **安装依赖：**
 
 ```sh
-npm install
+pnpm install
 ```
 
 ## ⚙️ 配置
@@ -192,19 +193,19 @@ npm install
 
   ```sh
   # 一次性构建
-  npm run rebuild
+  pnpm run rebuild
 
   # 运行构建的服务器
-  npm run start:http
+  pnpm run start:http
   # 或
-  npm run start:stdio
+  pnpm run start:stdio
   ```
 
 - **运行检查和测试**：
   ```sh
-  npm run typecheck  # 类型检查
-  npm run lint       # 代码检查
-  npm run test       # 运行测试套件
+  pnpm run typecheck  # 类型检查
+  pnpm run lint       # 代码检查
+  pnpm run test       # 运行测试套件
   ```
 
 ### Cloudflare Workers
@@ -212,19 +213,19 @@ npm install
 1.  **构建 Worker 包**：
 
 ```sh
-npm run build
+pnpm run build
 ```
 
 2.  **使用 Wrangler 本地运行**：
 
 ```sh
-npm run deploy:dev
+pnpm run deploy:dev
 ```
 
 3.  **部署到 Cloudflare**：
 
 ```sh
-bun deploy:prod
+pnpm run deploy:prod
 ```
 
 > **注意**：`wrangler.toml` 文件已预配置以启用 `nodejs_compat` 以获得最佳结果。
@@ -296,9 +297,9 @@ bun deploy:prod
 ## ❓ 常见问题
 
 - **这同时支持 STDIO 和 Streamable HTTP 吗？**
-  - 是的。两种传输都是一等公民。使用 `bun run dev:stdio` 或 `bun run dev:http`。
+  - 是的。两种传输都是一等公民。使用 `pnpm run dev:stdio` 或 `pnpm run dev:http`。
 - **我可以将其部署到边缘吗？**
-  - 是的。本项目支持 Cloudflare Workers。运行 `pnpm run build` 后使用 `pnpm run deploy:dev` 或 `deploy:prod` 部署。
+  - 是的。本项目支持 Cloudflare Workers。运行 `pnpm run build` 后使用 `pnpm run deploy:dev` 或 `pnpm run deploy:prod` 部署。
 - **我必须使用 OpenTelemetry 吗？**
   - 不，默认情况下它是禁用的。通过在 `.env` 文件中设置 `OTEL_ENABLED=true` 来启用它。
 
@@ -308,7 +309,7 @@ bun deploy:prod
 
 ```sh
 pnpm run typecheck && pnpm run lint
-pnpm test
+pnpm run test
 ```
 
 ## 📜 许可证
