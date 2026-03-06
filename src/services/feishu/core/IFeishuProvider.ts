@@ -94,28 +94,80 @@ export interface IFeishuApiProvider {
   ): Promise<FeishuDocument>;
 
   /**
-   * updateDocument method 更新飞书文档.
+   * updateDocument method 更新飞书文档（删除旧文档并在原位置重建）.
    * @param accessToken 访问令牌
-   * @param documentId 文档 ID
+   * @param documentId 旧文档 ID
    * @param content Markdown 内容
-   * @returns 更新后的文档信息
+   * @param title 文档标题
+   * @param targetType 目标类型 (drive/wiki)
+   * @param targetId 目标 ID
+   * @param parentNodeToken 父节点 token
+   * @returns 新文档信息
    */
   updateDocument(
     accessToken: string,
     documentId: string,
     content: string,
+    title: string,
+    targetType?: 'drive' | 'wiki',
+    targetId?: string,
+    parentNodeToken?: string,
   ): Promise<FeishuDocument>;
 
   /**
-   * getDocumentMeta method 获取文档元数据.
+   * getDocumentMeta method 获取文档元数据（含 revision_id）.
    * @param accessToken 访问令牌
    * @param documentId 文档 ID
-   * @returns 文档元数据（包含最后修改时间）
+   * @returns 文档元数据（包含 revisionId 用于冲突检测）
    */
   getDocumentMeta(
     accessToken: string,
     documentId: string,
-  ): Promise<{ documentId: string; updatedAt: number }>;
+  ): Promise<{ documentId: string; updatedAt: number; revisionId: number }>;
+
+  /**
+   * deleteDocument method 删除云空间文档.
+   * @param accessToken 访问令牌
+   * @param fileToken 文档 token
+   * @param fileType 文件类型
+   */
+  deleteDocument(
+    accessToken: string,
+    fileToken: string,
+    fileType?: 'docx' | 'file',
+  ): Promise<void>;
+
+  /**
+   * getDocumentContent method 获取文档文本内容（通过 Block API）.
+   * @param accessToken 访问令牌
+   * @param documentId 文档 ID
+   * @returns 文档标题和内容
+   */
+  getDocumentContent(
+    accessToken: string,
+    documentId: string,
+  ): Promise<{ title: string; content: string; revisionId: number }>;
+
+  /**
+   * searchDocuments method 搜索云空间文档.
+   * @param accessToken 访问令牌
+   * @param query 搜索关键词
+   * @param count 最多返回数量
+   * @returns 文档列表
+   */
+  searchDocuments(
+    accessToken: string,
+    query: string,
+    count?: number,
+  ): Promise<
+    Array<{
+      token: string;
+      name: string;
+      url: string;
+      type: string;
+      ownerName: string;
+    }>
+  >;
 
   /**
    * uploadFile method 上传文件到飞书.
@@ -400,6 +452,67 @@ export interface IFeishuService {
     parentNodeToken?: string,
     appId?: string,
   ): Promise<FeishuWikiNode[]>;
+
+  /**
+   * getDocumentContent method 读取飞书文档文本内容.
+   * @param context 请求上下文
+   * @param documentId 文档 ID
+   * @param appId 应用 ID
+   * @returns 文档标题和 Markdown 内容
+   */
+  getDocumentContent(
+    context: RequestContext,
+    documentId: string,
+    appId?: string,
+  ): Promise<{ title: string; content: string; revisionId: number }>;
+
+  /**
+   * searchDocuments method 搜索文档.
+   * @param context 请求上下文
+   * @param query 搜索关键词
+   * @param count 最多返回数量
+   * @param appId 应用 ID
+   * @returns 文档列表
+   */
+  searchDocuments(
+    context: RequestContext,
+    query: string,
+    count?: number,
+    appId?: string,
+  ): Promise<
+    Array<{
+      token: string;
+      name: string;
+      url: string;
+      type: string;
+      ownerName: string;
+    }>
+  >;
+
+  /**
+   * deleteDocumentFile method 删除飞书文档.
+   * @param context 请求上下文
+   * @param documentId 文档 ID
+   * @param appId 应用 ID
+   */
+  deleteDocumentFile(
+    context: RequestContext,
+    documentId: string,
+    appId?: string,
+  ): Promise<void>;
+
+  /**
+   * addApp method 添加/配置新的飞书应用.
+   * @param context 请求上下文
+   * @param appId 应用 ID
+   * @param appSecret 应用密钥
+   * @returns 配置结果
+   */
+  addApp(
+    context: RequestContext,
+    appId: string,
+    appSecret: string,
+  ): Promise<{ success: boolean; appId: string }>;
 
   /**
    * batchUploadMarkdown method 批量上传 Markdown 文档.

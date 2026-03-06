@@ -13,12 +13,12 @@ import { html } from 'hono/html';
 import http from 'http';
 import { container } from 'tsyringe';
 import { randomUUID } from 'crypto';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-
 import { config } from '@/config/index.js';
 import { FeishuServiceToken } from '@/container/tokens.js';
 import { httpErrorHandler } from '@/mcp-server/transports/http/httpErrorHandler.js';
-import type { HonoNodeBindings } from '@/mcp-server/transports/http/httpTypes.js';
+import type {
+  HonoNodeBindings,
+} from '@/mcp-server/transports/http/httpTypes.js';
 import type { FeishuService } from '@/services/feishu/index.js';
 import {
   type RequestContext,
@@ -252,8 +252,8 @@ export function createStreamableHttpApp<TBindings extends object = HonoNodeBindi
     ? new StreamableHTTPServerTransport()
     : new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
 
-  // 连接到MCP服务器
-  void mcpServer.connect(transport as any).then(() => {
+  // 连接到MCP服务器（StreamableHTTPServerTransport 与 SDK Transport 类型兼容）
+  void mcpServer.connect(transport as Parameters<McpServer['connect']>[0]).then(() => {
     logger.info('MCP server connected to Streamable HTTP transport', transportContext);
   }).catch((err) => {
     logger.error(
@@ -272,8 +272,9 @@ export function createStreamableHttpApp<TBindings extends object = HonoNodeBindi
     });
 
     // 获取原始的Node.js请求和响应对象
-    const req = (c.env as any)?.incoming as IncomingMessage | undefined;
-    const res = (c.env as any)?.outgoing as ServerResponse | undefined;
+    const env = c.env as HonoNodeBindings | undefined;
+    const req = env?.incoming;
+    const res = env?.outgoing;
 
     if (!req || !res) {
       logger.error('Failed to get Node.js request/response objects', transportContext);
@@ -282,13 +283,14 @@ export function createStreamableHttpApp<TBindings extends object = HonoNodeBindi
 
     try {
       // 对于 POST 请求，传递已解析的 body
-      const parsedBody = c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined;
+      const parsedBody: unknown =
+        c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined;
       
       // 使用 SDK 的传输处理请求
       await transport.handleRequest(req, res, parsedBody);
 
       // handleRequest 会直接写入响应，不需要返回
-      return undefined as any;
+      return undefined;
     } catch (err) {
       logger.error(
         'Failed to handle MCP request',
@@ -300,7 +302,7 @@ export function createStreamableHttpApp<TBindings extends object = HonoNodeBindi
       if (!res.headersSent) {
         return c.json({ error: 'Failed to handle request' }, 500);
       }
-      return undefined as any;
+      return undefined;
     }
   });
 

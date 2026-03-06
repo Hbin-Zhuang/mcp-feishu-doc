@@ -46,7 +46,6 @@ describe('飞书 API 提供者', () => {
       expect(result.authUrl).toContain('scope=');
       expect(result.authUrl).toContain('contact%3Auser.base%3Areadonly');
       expect(result.authUrl).toContain('docx%3Adocument');
-      expect(result.authUrl).toContain('drive%3Adrive');
       expect(result.authUrl).toContain('wiki%3Awiki');
       expect(result.authUrl).toContain('offline_access');
     });

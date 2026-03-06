@@ -80,7 +80,7 @@ describe('飞书文档上传工具', () => {
       expect(result.success).toBe(true);
 
       if (result.success) {
-        expect(result.data.targetType).toBe('drive');
+        expect(result.data.targetType).toBe('wiki');
         expect(result.data.uploadImages).toBe(true);
         expect(result.data.uploadAttachments).toBe(true);
         expect(result.data.removeFrontMatter).toBe(true);

@@ -15,16 +15,22 @@ import { logger, requestContextService } from '@/utils/index.js';
 const isServerless =
   typeof process === 'undefined' || process.env.IS_SERVERLESS === 'true';
 
-// Dynamically import 'path' only in non-serverless environments
+// Load 'path' synchronously in Node (for filesystem storage) to avoid race with first sanitizePath call
 let pathModule: typeof import('path') | undefined;
-if (!isServerless) {
-  import('path')
-    .then((mod) => {
-      pathModule = mod.default;
-    })
-    .catch(() => {
-      // This might happen in some bundlers, but we have the guard.
-    });
+if (!isServerless && typeof process !== 'undefined') {
+  try {
+    const { createRequire } = await import('node:module');
+    const req = createRequire(import.meta.url);
+    pathModule = req('path') as typeof import('path');
+  } catch {
+    // Fallback: async import for environments where createRequire fails
+    import('path').then(
+      (mod) => {
+        pathModule = mod.default;
+      },
+      () => {},
+    );
+  }
 }
 
 /**
