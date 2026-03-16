@@ -586,11 +586,13 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       );
     }
 
+    // 为了与工具的 OutputSchema 严格对齐，确保所有字段都为字符串，
+    // 即便飞书返回中缺少某些字段，也会使用安全的兜底值。
     return (response.data.docs_entities ?? []).map((doc) => ({
-      token: doc.doc_token,
-      name: doc.title,
-      url: doc.url,
-      type: doc.doc_type,
+      token: doc.doc_token ?? '',
+      name: doc.title ?? '',
+      url: doc.url ?? '',
+      type: doc.doc_type ?? '',
       ownerName: doc.owner_id ?? '',
     }));
   }
@@ -780,8 +782,30 @@ export class FeishuApiProvider implements IFeishuApiProvider {
         const ft = b.image?.file_token;
         return ft ? { type: 'image', fileToken: ft } : null;
       }
-      default:
-        return null;
+      default: {
+        // 为了兼容未来可能新增的 block 类型，这里做一个宽松的兜底：
+        // 在未知类型中，遍历其子对象，尝试查找任何包含 elements[].text_run.content 的结构，
+        // 将其拼接为纯文本返回，避免丢失内容（例如代码块、段落等结构发生变更时）。
+        const candidates: Array<{ text_run?: { content?: string } }> = [];
+        const visit = (value: unknown) => {
+          if (!value || typeof value !== 'object') return;
+          if (Array.isArray(value)) {
+            for (const item of value) visit(item);
+            return;
+          }
+          const obj = value as { elements?: Array<{ text_run?: { content?: string } }> };
+          if (Array.isArray(obj.elements)) {
+            candidates.push(...obj.elements);
+          }
+          for (const v of Object.values(obj)) {
+            visit(v);
+          }
+        };
+
+        visit(block);
+        const text = getTextFromElements(candidates);
+        return text ? { type: 'text', value: text } : null;
+      }
     }
   }
 

@@ -7,6 +7,15 @@ For changelog details from version 2.0.1 to 2.3.0, please refer to the [changelo
 
 ---
 
+## [2.6.4] - 2026-03-16
+
+### Changed
+
+- **文档读取兼容性**：放宽 Block 解析逻辑，对未知或新增的 Block 类型做通用的文本提取兜底，避免在飞书 Block 结构变更时丢失正文内容，同时保留对图片 Block（含 base64 data URI）的专门处理。
+- **版本号更新**：将版本号从 `2.6.3` 更新为 `2.6.4`，同步更新 `package.json` 与 `server.json` 中的版本字段。
+
+---
+
 ## [2.6.3] - 2026-03-16
 
 ### Changed
