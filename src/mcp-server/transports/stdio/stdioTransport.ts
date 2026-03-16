@@ -85,9 +85,22 @@ export async function startStdioTransport(
     // 如果配置了飞书服务，启动 OAuth 回调服务器
     if (config.feishu?.oauthCallbackUrl) {
       try {
-        logger.info('Starting OAuth callback server for Feishu...', operationContext);
-        oauthCallbackServer = startOAuthCallbackServer(operationContext);
-        logger.info('OAuth callback server started successfully', operationContext);
+        logger.info(
+          'Starting OAuth callback server for Feishu...',
+          operationContext,
+        );
+        oauthCallbackServer = await startOAuthCallbackServer(operationContext);
+        if (oauthCallbackServer) {
+          logger.info(
+            'OAuth callback server started successfully',
+            operationContext,
+          );
+        } else {
+          logger.info(
+            'OAuth callback server not started because target port is already in use; assuming another instance is handling callbacks.',
+            operationContext,
+          );
+        }
       } catch (err) {
         logger.warning(
           'Failed to start OAuth callback server, OAuth features may not work',
@@ -100,7 +113,11 @@ export async function startStdioTransport(
     }
 
     logStartupBanner(
-      `\n🚀 MCP Server running in STDIO mode.\n   (MCP Spec: 2025-06-18 Stdio Transport)\n${oauthCallbackServer ? `   OAuth callback server: http://${config.mcpHttpHost}:${config.mcpHttpPort}\n` : ''}`,
+      `\n🚀 MCP Server running in STDIO mode.\n   (MCP Spec: 2025-06-18 Stdio Transport)\n${
+        oauthCallbackServer
+          ? `   OAuth callback server: http://${config.mcpHttpHost}:${config.mcpHttpPort}\n`
+          : ''
+      }`,
       'stdio',
     );
     return server;

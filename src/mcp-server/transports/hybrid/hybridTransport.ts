@@ -1,6 +1,6 @@
 /**
  * @fileoverview Hybrid transport: stdio for MCP + HTTP for OAuth callbacks
- * This allows Kiro to communicate via stdio while OAuth callbacks work via HTTP
+ * This allows clients to communicate via stdio while OAuth callbacks work via HTTP.
  *
  * @module src/mcp-server/transports/hybrid/hybridTransport
  */
@@ -8,6 +8,7 @@ import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { html } from 'hono/html';
+import http from 'http';
 import { container } from 'tsyringe';
 
 import { config } from '@/config/index.js';
@@ -19,6 +20,30 @@ import {
   type RequestContext,
   logger,
 } from '@/utils/index.js';
+
+/**
+ * Checks if a given host:port is already in use.
+ * This is used to make the OAuth callback server tolerant to port conflicts
+ * (e.g., when another MCP instance or HTTP transport is already bound).
+ */
+async function isPortInUse(
+  port: number,
+  host: string,
+  parentContext: RequestContext,
+): Promise<boolean> {
+  const context = { ...parentContext, operation: 'isPortInUse', port, host };
+  logger.debug(`Checking if OAuth callback port ${port} is in use...`, context);
+
+  return new Promise((resolve) => {
+    const tempServer = http.createServer();
+    tempServer
+      .once('error', (err: NodeJS.ErrnoException) =>
+        resolve(err.code === 'EADDRINUSE'),
+      )
+      .once('listening', () => tempServer.close(() => resolve(false)))
+      .listen(port, host);
+  });
+}
 
 /**
  * 创建仅用于 OAuth 回调的 HTTP 服务器
@@ -279,15 +304,31 @@ export function createOAuthCallbackApp<TBindings extends object = HonoNodeBindin
 /**
  * 启动 OAuth 回调服务器（后台运行）
  */
-export function startOAuthCallbackServer(
+export async function startOAuthCallbackServer(
   parentContext: RequestContext,
-): ServerType {
+): Promise<ServerType | null> {
   const transportContext = {
     ...parentContext,
     component: 'OAuthCallbackServer',
   };
 
   logger.info('Starting OAuth callback server...', transportContext);
+
+  // 如果端口已被占用（例如已有 HTTP MCP 服务或其它实例在监听），
+  // 则跳过启动回调服务器，仅记录日志，避免因为端口冲突导致整个 MCP 启动失败。
+  const inUse = await isPortInUse(
+    config.mcpHttpPort,
+    config.mcpHttpHost,
+    transportContext,
+  );
+
+  if (inUse) {
+    logger.info(
+      `OAuth callback server port ${config.mcpHttpPort} is already in use, skipping dedicated callback server startup.`,
+      transportContext,
+    );
+    return null;
+  }
 
   const app = createOAuthCallbackApp(transportContext);
 
