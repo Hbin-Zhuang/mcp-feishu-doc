@@ -6,8 +6,10 @@
         "env": {
           "MCP_TRANSPORT_TYPE": "stdio",
           "MCP_LOG_LEVEL": "debug",
-          "FEISHU_DEFAULT_APP_ID": "cli_a9fe7d82b9f89bc6",
-          "FEISHU_DEFAULT_APP_SECRET": "X2NmZPgMgzcYO90WKxtjJfY8GCxarsGX",
+          // "FEISHU_DEFAULT_APP_ID": "cli_a9fe7d82b9f89bc6",
+          "FEISHU_DEFAULT_APP_ID": "cli_a92027a830badbc2",
+          // "FEISHU_DEFAULT_APP_SECRET": "X2NmZPgMgzcYO90WKxtjJfY8GCxarsGX",
+          "FEISHU_DEFAULT_APP_SECRET": "8ytMxmVHcKT28iQEGOm6seYkvNQ7kJUS",
           "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
           "STORAGE_PROVIDER_TYPE": "filesystem",
           "STORAGE_FILESYSTEM_PATH": "./.storage"

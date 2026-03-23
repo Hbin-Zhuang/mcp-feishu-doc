@@ -6,8 +6,6 @@
     "verbatimModuleSyntax": false,
     "noEmit": true, // Ensure no JS is emitted for test files
     "types": [
-      "bun",
-      "bun-types",
       "node",
       "reflect-metadata",
       "@cloudflare/workers-types",

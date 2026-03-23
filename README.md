@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
+[![Version](https://img.shields.io/badge/Version-2.6.4-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
 
 </div>
 
@@ -194,13 +194,16 @@ pnpm install
 - **构建并运行生产版本**：
 
   ```sh
-  # 一次性构建
-  pnpm run rebuild
+  # 1. 构建一次（或使用 rebuild）
+  pnpm run build
+
+  # 2. 启动 Inspector（会启动 MCP Server 并打开浏览器调试页）
+  pnpm run inspector
 
   # 运行构建的服务器
-  pnpm run start:http
+  pnpm run start:http # HTTP 传输模式
   # 或
-  pnpm run start:stdio
+  pnpm run start:stdio # STDIO 传输模式
   ```
 
 - **运行检查和测试**：

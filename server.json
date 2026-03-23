@@ -12,7 +12,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hibson/mcp-feishu-doc",
-      "runtimeHint": "bun",
+      "runtimeHint": "node",
       "version": "2.6.4",
       "packageArguments": [
         {
@@ -41,7 +41,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hibson/mcp-feishu-doc",
-      "runtimeHint": "bun",
+      "runtimeHint": "node",
       "version": "2.6.4",
       "packageArguments": [
         {

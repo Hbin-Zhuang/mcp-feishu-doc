@@ -110,7 +110,9 @@
   "depcheck": {
     "ignores": [
       "repomix",
-      "mcp-feishu-doc"
+      "mcp-feishu-doc",
+      "@vitest/coverage-v8",
+      "rimraf"
     ]
   },
   "publishConfig": {

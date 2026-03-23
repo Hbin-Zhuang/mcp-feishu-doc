@@ -143,6 +143,10 @@ logs/
 # TESTING & COVERAGE
 # =============================================================================
 .nyc_output/
+test-temp/
+test-batch-temp/
+test-e2e-temp/
+test-perf-temp/
 
 # =============================================================================
 # CACHE & TEMPORARY FILES
