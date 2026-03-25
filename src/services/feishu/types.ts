@@ -115,6 +115,70 @@ export interface FeishuDocument {
 }
 
 /**
+ * FeishuDocumentReadBlockType type 文档读取块类型.
+ */
+export type FeishuDocumentReadBlockType = 'text' | 'image' | 'file';
+
+/**
+ * FeishuDocumentAssetType type 文档媒体资产类型.
+ */
+export type FeishuDocumentAssetType = 'image' | 'file';
+
+/**
+ * FeishuDocumentReadBlock interface 文档读取后的顺序块.
+ */
+export interface FeishuDocumentReadBlock {
+  /** Block ID */
+  blockId: string;
+  /** 块类型 */
+  type: FeishuDocumentReadBlockType;
+  /** 文本内容（仅 text 块） */
+  text?: string;
+  /** 媒体 file token（仅 image/file 块） */
+  fileToken?: string;
+  /** 在文本流中的占位文案 */
+  placeholderText?: string;
+}
+
+/**
+ * FeishuDocumentAsset interface 文档中解析出的媒体资产.
+ */
+export interface FeishuDocumentAsset {
+  /** 飞书 file token */
+  fileToken: string;
+  /** 资产类型 */
+  type: FeishuDocumentAssetType;
+  /** 文件名 */
+  fileName: string;
+  /** MIME 类型 */
+  mimeType: string;
+  /** 文件字节数 */
+  byteLength: number;
+  /** 本地临时文件路径（Node 环境下可用） */
+  localPath?: string;
+  /** 图片 base64 数据（不含 data URI 前缀） */
+  base64Data?: string;
+  /** 附件文本预览 */
+  previewText?: string;
+}
+
+/**
+ * FeishuDocumentContent interface 飞书文档读取结果.
+ */
+export interface FeishuDocumentContent {
+  /** 文档标题 */
+  title: string;
+  /** 近似 Markdown 的文本内容，包含图片/附件占位锚点 */
+  content: string;
+  /** 文档当前修订号 */
+  revisionId: number;
+  /** 按文档顺序排列的块 */
+  blocks: FeishuDocumentReadBlock[];
+  /** 文档中的媒体资产 */
+  assets: FeishuDocumentAsset[];
+}
+
+/**
  * LocalFileInfo interface 本地文件信息.
  */
 export interface LocalFileInfo {

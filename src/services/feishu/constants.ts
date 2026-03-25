@@ -192,6 +192,18 @@ export const DOC_IMAGE_EMBED_LIMITS = {
 };
 
 /**
+ * DOC_FILE_PREVIEW_LIMITS const 文档附件预览限制.
+ */
+export const DOC_FILE_PREVIEW_LIMITS = {
+  /** 单个附件可提取文本预览的最大字节数 */
+  maxPreviewBytes: 512 * 1024,
+  /** 返回给模型的最大文本预览字符数 */
+  maxPreviewChars: 12_000,
+  /** 附件临时文件保留时长 */
+  tempArtifactTtlMs: 24 * 60 * 60 * 1000,
+};
+
+/**
  * SUPPORTED_IMAGE_EXTENSIONS const 支持的图片扩展名.
  */
 export const SUPPORTED_IMAGE_EXTENSIONS = [

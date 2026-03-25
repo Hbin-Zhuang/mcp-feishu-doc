@@ -4,6 +4,8 @@
  * @module tests/unit/services/feishu/feishu-api.test
  */
 
+import { existsSync, rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FeishuApiProvider } from '@/services/feishu/providers/feishu-api.provider.js';
 
@@ -461,6 +463,172 @@ describe('飞书 API 提供者', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(result.userId).toBe('test');
+    });
+  });
+
+  describe('getDocumentContent', () => {
+    it('应该按原文顺序返回文本、图片和附件资产', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  document: {
+                    document_id: 'doc_123',
+                    revision_id: 42,
+                    title: '多模态文档',
+                  },
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  items: [
+                    {
+                      block_id: 'page_1',
+                      block_type: 1,
+                      parent_id: '',
+                      page: {
+                        elements: [{ text_run: { content: '多模态文档' } }],
+                      },
+                    },
+                    {
+                      block_id: 'text_1',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                      text: {
+                        elements: [{ text_run: { content: '开场段落' } }],
+                      },
+                    },
+                    {
+                      block_id: 'image_1',
+                      block_type: 27,
+                      parent_id: 'page_1',
+                      image: {
+                        file_token: 'img_token_1',
+                      },
+                    },
+                    {
+                      block_id: 'text_2',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                      text: {
+                        elements: [{ text_run: { content: '插图后的说明' } }],
+                      },
+                    },
+                    {
+                      block_id: 'file_1',
+                      block_type: 23,
+                      parent_id: 'page_1',
+                      file: {
+                        file_token: 'file_token_1',
+                      },
+                    },
+                    {
+                      block_id: 'text_3',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                      text: {
+                        elements: [{ text_run: { content: '结尾段落' } }],
+                      },
+                    },
+                  ],
+                  has_more: false,
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  tmp_download_urls: [
+                    {
+                      file_token: 'img_token_1',
+                      tmp_download_url: 'https://cdn.example.com/image-1',
+                    },
+                    {
+                      file_token: 'file_token_1',
+                      tmp_download_url: 'https://cdn.example.com/file-1',
+                    },
+                  ],
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: () =>
+            Promise.resolve(Uint8Array.from([137, 80, 78, 71]).buffer),
+          headers: new Headers({
+            'content-type': 'image/png',
+            'content-disposition': 'inline; filename="diagram.png"',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: () =>
+            Promise.resolve(
+              Uint8Array.from(Buffer.from('alpha,beta\n1,2', 'utf8')).buffer,
+            ),
+          headers: new Headers({
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition':
+              "attachment; filename*=UTF-8''data.csv",
+          }),
+        });
+
+      const result = await provider.getDocumentContent(
+        'test_access_token',
+        'doc_123',
+      );
+
+      expect(result.title).toBe('多模态文档');
+      expect(result.revisionId).toBe(42);
+      expect(result.blocks.map((block) => block.type)).toEqual([
+        'text',
+        'image',
+        'text',
+        'file',
+        'text',
+      ]);
+      expect(result.content).toContain('开场段落');
+      expect(result.content).toContain('[图片1：diagram.png]');
+      expect(result.content).toContain('插图后的说明');
+      expect(result.content).toContain('[附件1：data.csv]');
+      expect(result.content).toContain('结尾段落');
+      expect(
+        result.content.indexOf('[图片1：diagram.png]'),
+      ).toBeGreaterThan(result.content.indexOf('开场段落'));
+      expect(
+        result.content.indexOf('[附件1：data.csv]'),
+      ).toBeGreaterThan(result.content.indexOf('插图后的说明'));
+
+      const imageAsset = result.assets.find(
+        (asset) => asset.type === 'image' && asset.fileToken === 'img_token_1',
+      );
+      const fileAsset = result.assets.find(
+        (asset) => asset.type === 'file' && asset.fileToken === 'file_token_1',
+      );
+
+      expect(imageAsset?.mimeType).toBe('image/png');
+      expect(imageAsset?.base64Data).toBeDefined();
+      expect(fileAsset?.fileName).toBe('data.csv');
+      expect(fileAsset?.previewText).toContain('alpha,beta');
+
+      if (imageAsset?.localPath) {
+        expect(existsSync(imageAsset.localPath)).toBe(true);
+        rmSync(dirname(imageAsset.localPath), { recursive: true, force: true });
+      }
     });
   });
 });

@@ -7,6 +7,7 @@
 import type { RequestContext } from '@/utils/internal/requestContext.js';
 import type {
   FeishuAuth,
+  FeishuDocumentContent,
   FeishuDocument,
   FeishuFolder,
   FeishuUserInfo,
@@ -146,7 +147,7 @@ export interface IFeishuApiProvider {
   getDocumentContent(
     accessToken: string,
     documentId: string,
-  ): Promise<{ title: string; content: string; revisionId: number }>;
+  ): Promise<FeishuDocumentContent>;
 
   /**
    * searchDocuments method 搜索云空间文档.
@@ -464,7 +465,7 @@ export interface IFeishuService {
     context: RequestContext,
     documentId: string,
     appId?: string,
-  ): Promise<{ title: string; content: string; revisionId: number }>;
+  ): Promise<FeishuDocumentContent>;
 
   /**
    * searchDocuments method 搜索文档.

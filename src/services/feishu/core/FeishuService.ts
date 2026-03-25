@@ -21,6 +21,7 @@ import type {
 } from './IFeishuProvider.js';
 import type {
   FeishuAuth,
+  FeishuDocumentContent,
   FeishuFolder,
   FeishuUserInfo,
   FeishuWikiSpace,
@@ -668,7 +669,7 @@ export class FeishuService implements IFeishuService {
     context: RequestContext,
     documentId: string,
     appId?: string,
-  ): Promise<{ title: string; content: string; revisionId: number }> {
+  ): Promise<FeishuDocumentContent> {
     this.ensureProviders();
 
     const finalAppId = appId || (await this.getDefaultAppId(context));

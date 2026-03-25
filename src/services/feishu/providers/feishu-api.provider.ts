@@ -8,6 +8,9 @@ import type { IFeishuApiProvider } from '../core/IFeishuProvider.js';
 import type {
   FeishuAuth,
   FeishuDocument,
+  FeishuDocumentAsset,
+  FeishuDocumentContent,
+  FeishuDocumentReadBlock,
   FeishuFolder,
   FeishuUserInfo,
   FeishuWikiSpace,
@@ -19,10 +22,10 @@ import {
   FEISHU_CONFIG,
   TOKEN_EXPIRED_CODES,
   FEISHU_ERROR_MESSAGES,
-  DOC_IMAGE_EMBED_LIMITS,
+  DOC_FILE_PREVIEW_LIMITS,
 } from '../constants.js';
 import { McpError, JsonRpcErrorCode } from '@/types-global/errors.js';
-import { logger, requestContextService } from '@/utils/index.js';
+import { logger, pdfParser, requestContextService } from '@/utils/index.js';
 
 /** HTTP 请求选项 */
 interface RequestOptions {
@@ -30,6 +33,25 @@ interface RequestOptions {
   headers?: Record<string, string>;
   body?: string | Buffer | FormData | ArrayBuffer;
   timeout?: number;
+}
+
+interface DocumentBlockRecord extends Record<string, unknown> {
+  block_id: string;
+  block_type: number;
+  parent_id: string;
+  children?: string[];
+}
+
+type ExtractedDocumentBlockContent =
+  | { type: 'text'; value: string }
+  | { type: 'image'; fileToken: string }
+  | { type: 'file'; fileToken: string };
+
+interface FetchedMediaArtifact {
+  fileName: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  localPath?: string;
 }
 
 /**
@@ -40,6 +62,7 @@ interface RequestOptions {
 export class FeishuApiProvider implements IFeishuApiProvider {
   public readonly name = 'feishu-api';
   private refreshPromise: Promise<FeishuAuth | null> | null = null;
+  private lastTempCleanupAt = 0;
 
   // 性能优化 T605: 重试配置
   private readonly maxRetries = FEISHU_CONFIG.MAX_RETRIES;
@@ -479,7 +502,7 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   public async getDocumentContent(
     accessToken: string,
     documentId: string,
-  ): Promise<{ title: string; content: string; revisionId: number }> {
+  ): Promise<FeishuDocumentContent> {
     // 获取文档基础信息
     const meta = await this.getDocumentMeta(accessToken, documentId);
 
@@ -522,21 +545,23 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       pageToken = resp.data.has_more ? resp.data.page_token : undefined;
     } while (pageToken);
 
-    // 将 block 树转换为 Markdown 文本（含图片 base64）
-    const lines = await this.buildDocumentLines(
+    const normalizedBlocks = this.normalizeDocumentReadBlocks(allBlocks);
+    const assetsByToken = await this.resolveDocumentReadAssets(
       accessToken,
-      allBlocks,
+      documentId,
+      normalizedBlocks,
+    );
+    const blocks = this.decorateDocumentReadBlocks(
+      normalizedBlocks,
+      assetsByToken,
     );
 
-    // 获取标题（首个 Page block 的标题）
-    const pageBlock = allBlocks.find((b) => b.block_type === 1);
-    const titleEl = pageBlock as { page?: { elements?: Array<{ text_run?: { content?: string } }> } } | undefined;
-    const title = titleEl?.page?.elements?.map((e) => e.text_run?.content || '').join('') || '';
-
     return {
-      title: title || documentId,
-      content: lines.filter(Boolean).join('\n\n'),
+      title: this.extractDocumentReadTitle(allBlocks, documentId),
+      content: this.renderDocumentReadText(blocks),
       revisionId: meta.revisionId,
+      blocks,
+      assets: Array.from(assetsByToken.values()),
     };
   }
 
@@ -598,68 +623,416 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   }
 
   /**
-   * buildDocumentLines method 构建文档行（含图片 base64 data URI）.
-   * 限制：最多内联 N 张、单张 ≤ 2.5MB、总字节 ≤ 5MB，超出用占位符.
+   * normalizeDocumentReadBlocks method 归一化文档读取块.
    */
-  private async buildDocumentLines(
-    accessToken: string,
-    blocks: Array<Record<string, unknown>>,
-  ): Promise<string[]> {
-    type BlockContent =
-      | { type: 'text'; value: string }
-      | { type: 'image'; fileToken: string };
+  private normalizeDocumentReadBlocks(
+    blocks: DocumentBlockRecord[],
+  ): FeishuDocumentReadBlock[] {
+    const normalized: FeishuDocumentReadBlock[] = [];
 
-    const getBlockContent = (block: Record<string, unknown>): BlockContent | null => {
-      const content = this.extractBlockContent(block);
-      if (!content) return null;
-      return content;
-    };
-
-    const items: BlockContent[] = [];
     for (const block of blocks) {
-      const c = getBlockContent(block);
-      if (c) items.push(c);
-    }
-
-    const imageItems = items.filter(
-      (i): i is { type: 'image'; fileToken: string } => i.type === 'image',
-    );
-    const tokensToFetch = imageItems
-      .slice(0, DOC_IMAGE_EMBED_LIMITS.maxImages)
-      .map((i) => i.fileToken);
-
-    const tokenToBase64 = new Map<string, string>();
-    if (tokensToFetch.length > 0) {
-      const urlMap = await this.batchGetTmpDownloadUrls(accessToken, tokensToFetch);
-      let totalBytes = 0;
-      const maxSingle = DOC_IMAGE_EMBED_LIMITS.maxSingleImageBytes;
-      const maxTotal = DOC_IMAGE_EMBED_LIMITS.maxTotalBytes;
-
-      for (const token of tokensToFetch) {
-        if (totalBytes >= maxTotal) break;
-        const url = urlMap.get(token);
-        if (!url) continue;
-        const result = await this.fetchImageAsBase64(url, accessToken);
-        if (!result) continue;
-        if (result.byteLength > maxSingle) continue;
-        if (totalBytes + result.byteLength > maxTotal) continue;
-        tokenToBase64.set(token, result.dataUri);
-        totalBytes += result.byteLength;
+      if (block.block_type === 1) {
+        continue;
       }
+
+      const content = this.extractBlockContent(block);
+      if (!content) {
+        continue;
+      }
+
+      if (content.type === 'text') {
+        const text = content.value.trim();
+        if (!text) {
+          continue;
+        }
+
+        normalized.push({
+          blockId: block.block_id,
+          type: 'text',
+          text,
+        });
+        continue;
+      }
+
+      normalized.push({
+        blockId: block.block_id,
+        type: content.type,
+        fileToken: content.fileToken,
+      });
     }
 
-    const lines: string[] = [];
-    for (const item of items) {
-      if (item.type === 'text') {
-        lines.push(item.value);
+    return normalized;
+  }
+
+  /**
+   * resolveDocumentReadAssets method 解析文档中的图片与附件资产.
+   */
+  private async resolveDocumentReadAssets(
+    accessToken: string,
+    documentId: string,
+    blocks: FeishuDocumentReadBlock[],
+  ): Promise<Map<string, FeishuDocumentAsset>> {
+    await this.cleanupExpiredTempArtifacts();
+
+    const fileTokens = Array.from(
+      new Set(
+        blocks
+          .map((block) => block.fileToken)
+          .filter((fileToken): fileToken is string => Boolean(fileToken)),
+      ),
+    );
+
+    const urlMap = await this.batchGetTmpDownloadUrls(accessToken, fileTokens);
+    const assets = new Map<string, FeishuDocumentAsset>();
+
+    for (const block of blocks) {
+      const fileToken = block.fileToken;
+      if (!fileToken || assets.has(fileToken)) {
+        continue;
+      }
+
+      const tmpUrl = urlMap.get(fileToken);
+      if (!tmpUrl) {
+        continue;
+      }
+
+      const artifact = await this.fetchMediaArtifact(
+        tmpUrl,
+        accessToken,
+        documentId,
+        fileToken,
+      );
+      if (!artifact) {
+        continue;
+      }
+
+      const mimeType = this.normalizeMimeType(artifact.mimeType);
+      const asset: FeishuDocumentAsset = {
+        fileToken,
+        type: block.type === 'image' ? 'image' : 'file',
+        fileName: artifact.fileName,
+        mimeType,
+        byteLength: artifact.bytes.length,
+      };
+
+      if (artifact.localPath) {
+        asset.localPath = artifact.localPath;
+      }
+
+      if (block.type === 'image') {
+        asset.base64Data = Buffer.from(artifact.bytes).toString('base64');
       } else {
-        const dataUri = tokenToBase64.get(item.fileToken);
-        lines.push(
-          dataUri ? `![image](${dataUri})` : `![image](feishu-image)`,
+        const previewText = await this.extractDocumentFilePreview(
+          artifact.bytes,
+          mimeType,
+        );
+        if (previewText) {
+          asset.previewText = previewText;
+        }
+      }
+
+      assets.set(fileToken, asset);
+    }
+
+    return assets;
+  }
+
+  /**
+   * decorateDocumentReadBlocks method 为文档块补齐占位文本.
+   */
+  private decorateDocumentReadBlocks(
+    blocks: FeishuDocumentReadBlock[],
+    assetsByToken: Map<string, FeishuDocumentAsset>,
+  ): FeishuDocumentReadBlock[] {
+    let imageIndex = 0;
+    let fileIndex = 0;
+
+    return blocks.map((block) => {
+      if (block.type === 'text') {
+        return block;
+      }
+
+      const asset = block.fileToken
+        ? assetsByToken.get(block.fileToken)
+        : undefined;
+      const fileName = asset?.fileName || block.fileToken || 'unknown';
+
+      if (block.type === 'image') {
+        imageIndex += 1;
+        return {
+          ...block,
+          placeholderText: `[图片${imageIndex}：${fileName}]`,
+        };
+      }
+
+      fileIndex += 1;
+      return {
+        ...block,
+        placeholderText: `[附件${fileIndex}：${fileName}]`,
+      };
+    });
+  }
+
+  /**
+   * renderDocumentReadText method 生成最终文本表示.
+   */
+  private renderDocumentReadText(blocks: FeishuDocumentReadBlock[]): string {
+    return blocks
+      .map((block) => {
+        if (block.type === 'text') {
+          return block.text ?? '';
+        }
+        return block.placeholderText ?? '';
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  /**
+   * extractDocumentReadTitle method 提取文档标题.
+   */
+  private extractDocumentReadTitle(
+    blocks: DocumentBlockRecord[],
+    fallbackTitle: string,
+  ): string {
+    const pageBlock = blocks.find((block) => block.block_type === 1) as
+      | (DocumentBlockRecord & {
+          page?: { elements?: Array<{ text_run?: { content?: string } }> };
+        })
+      | undefined;
+
+    const title = this.extractTextFromElements(pageBlock?.page?.elements).trim();
+    return title || fallbackTitle;
+  }
+
+  /**
+   * fetchMediaArtifact method 拉取媒体文件并写入临时目录.
+   */
+  private async fetchMediaArtifact(
+    tmpUrl: string,
+    accessToken: string,
+    documentId: string,
+    fileToken: string,
+  ): Promise<FetchedMediaArtifact | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(tmpUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const fileName =
+        this.extractFileNameFromHeaders(response.headers, fileToken) || fileToken;
+      const mimeType =
+        response.headers.get('content-type') || 'application/octet-stream';
+      const localPath = await this.writeTempArtifact(
+        documentId,
+        fileToken,
+        fileName,
+        bytes,
+      );
+
+      return {
+        fileName,
+        mimeType,
+        bytes,
+        ...(localPath ? { localPath } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * writeTempArtifact method 写入本地临时文件.
+   */
+  private async writeTempArtifact(
+    documentId: string,
+    fileToken: string,
+    fileName: string,
+    bytes: Uint8Array,
+  ): Promise<string | undefined> {
+    try {
+      const fs = await import('node:fs/promises');
+      const os = await import('node:os');
+      const path = await import('node:path');
+
+      const rootDir = path.join(os.tmpdir(), 'mcp-feishu-doc', 'feishu-assets');
+      const documentDir = path.join(rootDir, documentId);
+      const safeName = this.sanitizeFileName(fileName);
+      const targetPath = path.join(documentDir, `${fileToken}-${safeName}`);
+
+      await fs.mkdir(documentDir, { recursive: true });
+      await fs.writeFile(targetPath, bytes);
+
+      return targetPath;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * cleanupExpiredTempArtifacts method 清理过期临时文件目录.
+   */
+  private async cleanupExpiredTempArtifacts(): Promise<void> {
+    const now = Date.now();
+    if (
+      now - this.lastTempCleanupAt <
+      DOC_FILE_PREVIEW_LIMITS.tempArtifactTtlMs / 4
+    ) {
+      return;
+    }
+
+    this.lastTempCleanupAt = now;
+
+    try {
+      const fs = await import('node:fs/promises');
+      const os = await import('node:os');
+      const path = await import('node:path');
+
+      const rootDir = path.join(os.tmpdir(), 'mcp-feishu-doc', 'feishu-assets');
+      const entries = await fs.readdir(rootDir, { withFileTypes: true });
+
+      await Promise.all(
+        entries.map(async (entry) => {
+          if (!entry.isDirectory()) {
+            return;
+          }
+
+          const fullPath = path.join(rootDir, entry.name);
+          const stats = await fs.stat(fullPath);
+          if (
+            now - stats.mtimeMs >
+            DOC_FILE_PREVIEW_LIMITS.tempArtifactTtlMs
+          ) {
+            await fs.rm(fullPath, { recursive: true, force: true });
+          }
+        }),
+      );
+    } catch {
+      return;
+    }
+  }
+
+  /**
+   * extractDocumentFilePreview method 提取附件文本预览.
+   */
+  private async extractDocumentFilePreview(
+    bytes: Uint8Array,
+    mimeType: string,
+  ): Promise<string | undefined> {
+    if (bytes.length > DOC_FILE_PREVIEW_LIMITS.maxPreviewBytes) {
+      return undefined;
+    }
+
+    const normalizedMimeType = this.normalizeMimeType(mimeType);
+    const textLikeMimeTypes = [
+      'text/',
+      'application/json',
+      'application/xml',
+      'application/javascript',
+      'image/svg+xml',
+    ];
+
+    try {
+      if (
+        textLikeMimeTypes.some((prefix) =>
+          normalizedMimeType.startsWith(prefix),
+        )
+      ) {
+        return this.limitPreviewText(Buffer.from(bytes).toString('utf8'));
+      }
+
+      if (normalizedMimeType === 'application/pdf') {
+        const document = await pdfParser.loadDocument(bytes);
+        const extracted = await pdfParser.extractText(document, {
+          mergePages: true,
+        });
+
+        return this.limitPreviewText(
+          typeof extracted.text === 'string'
+            ? extracted.text
+            : extracted.text.join('\n\n'),
         );
       }
+    } catch {
+      return undefined;
     }
-    return lines;
+
+    return undefined;
+  }
+
+  /**
+   * extractFileNameFromHeaders method 从响应头解析文件名.
+   */
+  private extractFileNameFromHeaders(
+    headers: Headers,
+    fallbackName: string,
+  ): string {
+    const disposition = headers.get('content-disposition');
+    if (!disposition) {
+      return fallbackName;
+    }
+
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      return decodeURIComponent(utf8Match[1]);
+    }
+
+    const quotedMatch = disposition.match(/filename="([^"]+)"/i);
+    if (quotedMatch?.[1]) {
+      return quotedMatch[1];
+    }
+
+    const plainMatch = disposition.match(/filename=([^;]+)/i);
+    if (plainMatch?.[1]) {
+      return plainMatch[1].trim();
+    }
+
+    return fallbackName;
+  }
+
+  /**
+   * limitPreviewText method 限制附件预览长度.
+   */
+  private limitPreviewText(text: string): string | undefined {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    return trimmed.slice(0, DOC_FILE_PREVIEW_LIMITS.maxPreviewChars);
+  }
+
+  /**
+   * normalizeMimeType method 归一化 MIME 类型.
+   */
+  private normalizeMimeType(mimeType: string): string {
+    return mimeType.split(';')[0]?.trim().toLowerCase() || 'application/octet-stream';
+  }
+
+  /**
+   * sanitizeFileName method 清理文件名.
+   */
+  private sanitizeFileName(fileName: string): string {
+    return fileName.replace(/[^\w.\-]+/g, '_');
+  }
+
+  /**
+   * extractTextFromElements method 提取文本元素中的文本.
+   */
+  private extractTextFromElements(
+    elements?: Array<{ text_run?: { content?: string } }>,
+  ): string {
+    return (elements ?? []).map((e) => e.text_run?.content || '').join('');
   }
 
   /**
@@ -698,89 +1071,57 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   }
 
   /**
-   * fetchImageAsBase64 method 从临时 URL 拉取图片并转为 base64 data URI.
-   * 单张超过 maxSingleImageBytes 时返回 null（使用占位符）.
-   */
-  private async fetchImageAsBase64(
-    tmpUrl: string,
-    accessToken: string,
-  ): Promise<{ dataUri: string; byteLength: number } | null> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(tmpUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) return null;
-      const blob = await response.arrayBuffer();
-      const bytes = new Uint8Array(blob);
-      const byteLength = bytes.length;
-      if (byteLength > DOC_IMAGE_EMBED_LIMITS.maxSingleImageBytes) {
-        return null;
-      }
-      const b64 = Buffer.from(bytes).toString('base64');
-      const contentType =
-        response.headers.get('content-type') || 'image/png';
-      return {
-        dataUri: `data:${contentType};base64,${b64}`,
-        byteLength,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * extractBlockContent method 从 block 提取内容（文本或图片 file_token）.
    */
   private extractBlockContent(
     block: Record<string, unknown>,
-  ): { type: 'text'; value: string } | { type: 'image'; fileToken: string } | null {
+  ): ExtractedDocumentBlockContent | null {
     const blockType = block.block_type as number;
-    const getTextFromElements = (elements?: Array<{ text_run?: { content?: string } }>) =>
-      (elements ?? []).map((e) => e.text_run?.content || '').join('');
 
     switch (blockType) {
       case 2: {
         const b = block as { text?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        const v = getTextFromElements(b.text?.elements);
+        const v = this.extractTextFromElements(b.text?.elements);
         return v ? { type: 'text', value: v } : null;
       }
       case 3: {
         const b = block as { heading1?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `# ${getTextFromElements(b.heading1?.elements)}` };
+        return { type: 'text', value: `# ${this.extractTextFromElements(b.heading1?.elements)}` };
       }
       case 4: {
         const b = block as { heading2?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `## ${getTextFromElements(b.heading2?.elements)}` };
+        return { type: 'text', value: `## ${this.extractTextFromElements(b.heading2?.elements)}` };
       }
       case 5: {
         const b = block as { heading3?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `### ${getTextFromElements(b.heading3?.elements)}` };
+        return { type: 'text', value: `### ${this.extractTextFromElements(b.heading3?.elements)}` };
       }
       case 10: {
         const b = block as { bullet?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `- ${getTextFromElements(b.bullet?.elements)}` };
+        return { type: 'text', value: `- ${this.extractTextFromElements(b.bullet?.elements)}` };
       }
       case 11: {
         const b = block as { ordered?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `1. ${getTextFromElements(b.ordered?.elements)}` };
+        return { type: 'text', value: `1. ${this.extractTextFromElements(b.ordered?.elements)}` };
       }
       case 12: {
         const b = block as { code?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `\`\`\`\n${getTextFromElements(b.code?.elements)}\n\`\`\`` };
+        return { type: 'text', value: `\`\`\`\n${this.extractTextFromElements(b.code?.elements)}\n\`\`\`` };
       }
       case 15: {
         const b = block as { quote?: { elements?: Array<{ text_run?: { content?: string } }> } };
-        return { type: 'text', value: `> ${getTextFromElements(b.quote?.elements)}` };
+        return { type: 'text', value: `> ${this.extractTextFromElements(b.quote?.elements)}` };
       }
-      case 22: {
+      case 22:
+      case 27: {
         const b = block as { image?: { file_token?: string } };
         const ft = b.image?.file_token;
         return ft ? { type: 'image', fileToken: ft } : null;
+      }
+      case 23: {
+        const b = block as { file?: { file_token?: string } };
+        const ft = b.file?.file_token;
+        return ft ? { type: 'file', fileToken: ft } : null;
       }
       default: {
         // 为了兼容未来可能新增的 block 类型，这里做一个宽松的兜底：
@@ -803,7 +1144,7 @@ export class FeishuApiProvider implements IFeishuApiProvider {
         };
 
         visit(block);
-        const text = getTextFromElements(candidates);
+        const text = this.extractTextFromElements(candidates);
         return text ? { type: 'text', value: text } : null;
       }
     }
