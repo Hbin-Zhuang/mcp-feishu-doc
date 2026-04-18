@@ -82,6 +82,8 @@ describe('飞书文档上传工具', () => {
       if (result.success) {
         expect(result.data.targetType).toBe('wiki');
         expect(result.data.uploadImages).toBe(true);
+        expect(result.data.downloadRemoteImages).toBe(false);
+        expect(result.data.downloadRemoteAttachments).toBe(false);
         expect(result.data.uploadAttachments).toBe(true);
         expect(result.data.removeFrontMatter).toBe(true);
       }
@@ -107,10 +109,28 @@ describe('飞书文档上传工具', () => {
             isImage: true,
           },
         ],
+        mediaUploadFailures: [
+          {
+            originalPath: '/path/to/data.csv',
+            fileName: 'data.csv',
+            isImage: false,
+            error: 'forbidden.',
+          },
+        ],
       };
 
       const result1 = schema.safeParse(successOutput);
       expect(result1.success).toBe(true);
+      if (result1.success) {
+        expect(result1.data.mediaUploadFailures).toEqual([
+          {
+            originalPath: '/path/to/data.csv',
+            fileName: 'data.csv',
+            isImage: false,
+            error: 'forbidden.',
+          },
+        ]);
+      }
 
       // 失败输出
       const failOutput = {
@@ -175,6 +195,7 @@ describe('飞书文档上传工具', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.force).toBe(true);
+        expect(result.data.downloadRemoteAttachments).toBe(false);
       }
     });
 

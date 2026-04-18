@@ -5,6 +5,12 @@
  */
 
 import { inject, injectable } from 'tsyringe';
+import { createHash } from 'node:crypto';
+import { createWriteStream, existsSync } from 'node:fs';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import { McpError, JsonRpcErrorCode } from '@/types-global/errors.js';
 import { StorageService } from '@/container/tokens.js';
 import {
@@ -21,19 +27,26 @@ import type {
 } from './IFeishuProvider.js';
 import type {
   FeishuAuth,
+  FeishuDocumentMediaPatch,
+  FeishuDocumentMediaPatchResult,
   FeishuDocumentContent,
   FeishuFolder,
   FeishuUserInfo,
   FeishuWikiSpace,
   FeishuWikiNode,
   LocalFileInfo,
+  MediaUploadFailure,
+  MediaUploadFailureStatus,
   MarkdownDocument,
   StoredFeishuAuth,
   UploadConfig,
-  UploadedFile,
   UploadResult,
 } from '../types.js';
-import { FEISHU_CONFIG } from '../constants.js';
+import {
+  DOC_MEDIA_UPLOAD_LIMITS,
+  FEISHU_CONFIG,
+  FILE_SIZE_LIMITS,
+} from '../constants.js';
 
 /**
  * FeishuService class 飞书服务编排器.
@@ -50,6 +63,13 @@ export class FeishuService implements IFeishuService {
   private configCache: Map<string, { value: unknown; expiresAt: number }> =
     new Map();
   private readonly cacheTtlMs = 5 * 60 * 1000; // 5 分钟缓存
+
+  private readonly mediaPatchWarningMessage = '文档媒体回填失败';
+  private readonly remoteMediaTempRoot = join(
+    tmpdir(),
+    'mcp-feishu-doc',
+    'feishu-upload-remote',
+  );
 
   constructor(@inject(StorageService) storage: IStorageService) {
     this.storage = storage;
@@ -117,6 +137,7 @@ export class FeishuService implements IFeishuService {
   ): Promise<UploadResult> {
     this.ensureProviders();
     const ctx = this.createContext('feishu.uploadMarkdown');
+    const tempFilesToCleanup = new Set<string>();
 
     const appId = config.appId || (await this.getDefaultAppId(ctx));
     if (!appId) {
@@ -147,7 +168,9 @@ export class FeishuService implements IFeishuService {
       {
         removeFrontMatter: config.removeFrontMatter ?? true,
         processImages: config.uploadImages ?? true,
+        downloadRemoteImages: config.downloadRemoteImages ?? false,
         processAttachments: config.uploadAttachments ?? true,
+        downloadRemoteAttachments: config.downloadRemoteAttachments ?? false,
         codeBlockFilterLanguages: config.codeBlockFilterLanguages ?? [],
       },
     );
@@ -164,50 +187,61 @@ export class FeishuService implements IFeishuService {
       config.parentNodeToken,
     );
 
-    const uploadedFiles = await this.uploadLocalFiles(
-      validAuth.accessToken,
-      processResult.localFiles,
-      config,
-    );
-
-    // 获取文档实际的 revisionId 用于冲突检测
-    let lastRevisionId: number | undefined;
     try {
-      const meta = await this.apiProvider!.getDocumentMeta(
-        validAuth.accessToken,
-        feishuDoc.documentId,
-      );
-      lastRevisionId = meta.revisionId;
-    } catch {
-      // 非关键错误，忽略
-    }
+      const { result: mediaPatchResult, tempFiles } =
+        await this.patchDocumentMediaPlaceholders(
+          validAuth.accessToken,
+          feishuDoc.documentId,
+          processResult.localFiles,
+          config,
+          ctx,
+        );
+      tempFiles.forEach((file) => tempFilesToCleanup.add(file));
 
-    await this.storeDocumentMeta(
-      feishuDoc.documentId,
-      {
+      // 获取文档实际的 revisionId 用于冲突检测
+      let lastRevisionId: number | undefined;
+      try {
+        const meta = await this.apiProvider!.getDocumentMeta(
+          validAuth.accessToken,
+          feishuDoc.documentId,
+        );
+        lastRevisionId = meta.revisionId;
+      } catch {
+        // 非关键错误，忽略
+      }
+
+      await this.storeDocumentMeta(
+        feishuDoc.documentId,
+        {
+          documentId: feishuDoc.documentId,
+          url: feishuDoc.url,
+          title,
+          appId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          lastUploadedAt: Date.now(),
+          lastRevisionId,
+          targetType: config.targetType,
+          ...(config.targetId ? { targetId: config.targetId } : {}),
+          ...(config.parentNodeToken ? { parentNodeToken: config.parentNodeToken } : {}),
+        },
+        ctx,
+      );
+
+      logger.info('文档上传成功', ctx);
+      return {
+        success: true,
         documentId: feishuDoc.documentId,
         url: feishuDoc.url,
         title,
-        appId,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        lastUploadedAt: Date.now(),
-        lastRevisionId,
-        targetType: config.targetType,
-        ...(config.targetId ? { targetId: config.targetId } : {}),
-        ...(config.parentNodeToken ? { parentNodeToken: config.parentNodeToken } : {}),
-      },
-      ctx,
-    );
-
-    logger.info('文档上传成功', ctx);
-    return {
-      success: true,
-      documentId: feishuDoc.documentId,
-      url: feishuDoc.url,
-      title,
-      uploadedFiles,
-    };
+        uploadedFiles: mediaPatchResult.uploadedFiles,
+        ...(mediaPatchResult.mediaUploadFailures.length > 0
+          ? { mediaUploadFailures: mediaPatchResult.mediaUploadFailures }
+          : {}),
+      };
+    } finally {
+      await this.cleanupRemoteUploadTempFiles(tempFilesToCleanup, ctx);
+    }
   }
 
   /** updateDocument method 更新文档（删除旧文档并在原位置重建）. */
@@ -219,6 +253,7 @@ export class FeishuService implements IFeishuService {
   ): Promise<UploadResult> {
     this.ensureProviders();
     const ctx = this.createContext('feishu.updateDocument');
+    const tempFilesToCleanup = new Set<string>();
 
     const appId = config.appId || (await this.getDefaultAppId(ctx));
     if (!appId)
@@ -270,7 +305,9 @@ export class FeishuService implements IFeishuService {
       {
         removeFrontMatter: config.removeFrontMatter ?? true,
         processImages: config.uploadImages ?? true,
+        downloadRemoteImages: config.downloadRemoteImages ?? false,
         processAttachments: config.uploadAttachments ?? true,
+        downloadRemoteAttachments: config.downloadRemoteAttachments ?? false,
         codeBlockFilterLanguages: config.codeBlockFilterLanguages ?? [],
       },
     );
@@ -296,47 +333,58 @@ export class FeishuService implements IFeishuService {
       parentNodeToken,
     );
 
-    const uploadedFiles = await this.uploadLocalFiles(
-      validAuth.accessToken,
-      processResult.localFiles,
-      config,
-    );
-
-    // 获取新文档的 revisionId
-    let lastRevisionId: number | undefined;
     try {
-      const meta = await this.apiProvider!.getDocumentMeta(
-        validAuth.accessToken,
-        feishuDoc.documentId,
-      );
-      lastRevisionId = meta.revisionId;
-    } catch {
-      // 非关键错误，忽略
-    }
+      const { result: mediaPatchResult, tempFiles } =
+        await this.patchDocumentMediaPlaceholders(
+          validAuth.accessToken,
+          feishuDoc.documentId,
+          processResult.localFiles,
+          config,
+          ctx,
+        );
+      tempFiles.forEach((file) => tempFilesToCleanup.add(file));
 
-    await this.updateDocumentMeta(
-      feishuDoc.documentId,
-      {
+      // 获取新文档的 revisionId
+      let lastRevisionId: number | undefined;
+      try {
+        const meta = await this.apiProvider!.getDocumentMeta(
+          validAuth.accessToken,
+          feishuDoc.documentId,
+        );
+        lastRevisionId = meta.revisionId;
+      } catch {
+        // 非关键错误，忽略
+      }
+
+      await this.updateDocumentMeta(
+        feishuDoc.documentId,
+        {
+          documentId: feishuDoc.documentId,
+          url: feishuDoc.url,
+          title,
+          updatedAt: Date.now(),
+          lastUploadedAt: Date.now(),
+          lastRevisionId,
+          targetType,
+          ...(targetId ? { targetId } : {}),
+          ...(parentNodeToken ? { parentNodeToken } : {}),
+        },
+        ctx,
+      );
+
+      return {
+        success: true,
         documentId: feishuDoc.documentId,
         url: feishuDoc.url,
         title,
-        updatedAt: Date.now(),
-        lastUploadedAt: Date.now(),
-        lastRevisionId,
-        targetType,
-        ...(targetId ? { targetId } : {}),
-        ...(parentNodeToken ? { parentNodeToken } : {}),
-      },
-      ctx,
-    );
-
-    return {
-      success: true,
-      documentId: feishuDoc.documentId,
-      url: feishuDoc.url,
-      title,
-      uploadedFiles,
-    };
+        uploadedFiles: mediaPatchResult.uploadedFiles,
+        ...(mediaPatchResult.mediaUploadFailures.length > 0
+          ? { mediaUploadFailures: mediaPatchResult.mediaUploadFailures }
+          : {}),
+      };
+    } finally {
+      await this.cleanupRemoteUploadTempFiles(tempFilesToCleanup, ctx);
+    }
   }
 
   /** getAuthUrl method 获取授权 URL. */
@@ -1130,36 +1178,374 @@ export class FeishuService implements IFeishuService {
       );
   }
 
-  private async uploadLocalFiles(
+  private async patchDocumentMediaPlaceholders(
     accessToken: string,
+    documentId: string,
     localFiles: LocalFileInfo[],
     config: UploadConfig,
-  ): Promise<UploadedFile[]> {
-    const uploadedFiles: UploadedFile[] = [];
-    const ctx = this.createContext('feishu.uploadLocalFiles');
+    ctx: RequestContext,
+  ): Promise<{
+    result: FeishuDocumentMediaPatchResult;
+    tempFiles: string[];
+  }> {
+    const apiProvider = this.apiProvider;
+    if (!apiProvider) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        '服务提供者未初始化',
+      );
+    }
 
-    for (const file of localFiles) {
-      if (file.isImage && !config.uploadImages) continue;
-      if (!file.isImage && !config.uploadAttachments) continue;
+    const { patches, failures, tempFiles } = await this.buildMediaPatches(
+      localFiles,
+      config,
+    );
+    if (patches.length === 0) {
+      return {
+        result: {
+          uploadedFiles: [],
+          mediaUploadFailures: failures,
+        },
+        tempFiles,
+      };
+    }
 
-      try {
-        await this.rateLimiter!.throttle('upload');
-        const fileKey = await this.apiProvider!.uploadFile(
-          accessToken,
-          file.originalPath,
-          file.isImage ? 'image' : 'file',
-        );
-        uploadedFiles.push({
+    try {
+      const patchResult = await apiProvider.replaceDocumentPlaceholdersWithMedia(
+        accessToken,
+        documentId,
+        patches,
+      );
+
+      return {
+        result: {
+          uploadedFiles: patchResult.uploadedFiles,
+          mediaUploadFailures: [...failures, ...patchResult.mediaUploadFailures],
+        },
+        tempFiles,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : this.mediaPatchWarningMessage;
+      logger.warning(this.mediaPatchWarningMessage, {
+        ...ctx,
+        documentId,
+        patchCount: patches.length,
+        error: message,
+      });
+
+      return {
+        result: {
+          uploadedFiles: [],
+          mediaUploadFailures: [
+            ...failures,
+            ...patches.map((patch) => ({
+              originalPath: patch.originalPath,
+              fileName: patch.fileName,
+              isImage: patch.type === 'image',
+              error: message,
+              status: 'upload_failed' as const,
+            })),
+          ],
+        },
+        tempFiles,
+      };
+    }
+  }
+
+  private async buildMediaPatches(
+    localFiles: LocalFileInfo[],
+    config: UploadConfig,
+  ): Promise<{
+    patches: FeishuDocumentMediaPatch[];
+    failures: MediaUploadFailure[];
+    tempFiles: string[];
+  }> {
+    const patches: FeishuDocumentMediaPatch[] = [];
+    const failures: MediaUploadFailure[] = [];
+    const tempFiles = new Set<string>();
+    let accumulatedBytes = 0;
+    const candidates = localFiles.filter((file) => {
+      if (file.isImage && config.uploadImages === false) {
+        return false;
+      }
+      if (!file.isImage && config.uploadAttachments === false) {
+        return false;
+      }
+      return true;
+    });
+
+    const acceptedCandidates = candidates.slice(
+      0,
+      DOC_MEDIA_UPLOAD_LIMITS.maxMediaCount,
+    );
+    for (const skippedFile of candidates.slice(DOC_MEDIA_UPLOAD_LIMITS.maxMediaCount)) {
+      failures.push({
+        originalPath: skippedFile.originalPath,
+        fileName: skippedFile.fileName,
+        isImage: skippedFile.isImage,
+        error: '媒体数量超过单篇文档上传上限',
+        status: 'skipped_over_limit',
+      });
+    }
+
+    const resolvedSources = await this.mapWithConcurrencyLimit(
+      acceptedCandidates,
+      DOC_MEDIA_UPLOAD_LIMITS.remoteDownloadConcurrency,
+      async (file) => ({
+        file,
+        resolved: await this.resolveUploadMediaSource(file),
+      }),
+    );
+
+    for (const { file, resolved } of resolvedSources) {
+      if (!resolved.success) {
+        failures.push({
           originalPath: file.originalPath,
           fileName: file.fileName,
-          fileKey,
           isImage: file.isImage,
+          error: resolved.error,
+          status: resolved.status,
         });
-      } catch (_error) {
-        logger.warning(`文件上传失败: ${file.originalPath}`, ctx);
+        continue;
+      }
+
+      if (resolved.tempFilePath) {
+        tempFiles.add(resolved.tempFilePath);
+      }
+
+      const byteLength = resolved.byteLength;
+      const singleFileLimit = file.isImage
+        ? FILE_SIZE_LIMITS.image
+        : FILE_SIZE_LIMITS.file;
+
+      if (byteLength > singleFileLimit) {
+        failures.push({
+          originalPath: file.originalPath,
+          fileName: file.fileName,
+          isImage: file.isImage,
+          error: '媒体文件超过单文件上传大小限制',
+          status: 'skipped_too_large',
+        });
+        continue;
+      }
+
+      if (
+        accumulatedBytes + byteLength > DOC_MEDIA_UPLOAD_LIMITS.maxTotalBytes
+      ) {
+        failures.push({
+          originalPath: file.originalPath,
+          fileName: file.fileName,
+          isImage: file.isImage,
+          error: '媒体总大小超过单篇文档上传限制',
+          status: 'skipped_over_limit',
+        });
+        continue;
+      }
+
+      patches.push({
+        originalPath: file.originalPath,
+        resolvedPath: resolved.resolvedPath,
+        placeholder: file.placeholder,
+        type: file.isImage ? 'image' : 'file',
+        fileName: file.fileName,
+      });
+      accumulatedBytes += byteLength;
+    }
+
+    return { patches, failures, tempFiles: [...tempFiles] };
+  }
+
+  private async resolveUploadMediaSource(
+    file: LocalFileInfo,
+  ): Promise<
+    | {
+        success: true;
+        resolvedPath: string;
+        byteLength: number;
+        tempFilePath?: string;
+      }
+    | {
+        success: false;
+        status: MediaUploadFailureStatus;
+        error: string;
+      }
+  > {
+    if (file.sourceType === 'remote' && file.remoteUrl) {
+      try {
+        const { resolvedPath, shouldCleanup } = await this.downloadRemoteMediaToTemp(
+          file.remoteUrl,
+          file.fileName,
+        );
+        const fileStat = await stat(resolvedPath);
+
+        return {
+          success: true,
+          resolvedPath,
+          byteLength: fileStat.size,
+          ...(shouldCleanup ? { tempFilePath: resolvedPath } : {}),
+        };
+      } catch (error) {
+        return {
+          success: false,
+          status: 'upload_failed',
+          error:
+            error instanceof Error
+              ? error.message
+              : '下载远程媒体失败',
+        };
       }
     }
-    return uploadedFiles;
+
+    if (!existsSync(file.originalPath)) {
+      return {
+        success: false,
+        status: 'file_missing',
+        error: '本地媒体文件不存在',
+      };
+    }
+
+    const fileStat = await stat(file.originalPath);
+    return {
+      success: true,
+      resolvedPath: file.originalPath,
+      byteLength: fileStat.size,
+    };
+  }
+
+  private async downloadRemoteMediaToTemp(
+    remoteUrl: string,
+    fileName: string,
+  ): Promise<{ resolvedPath: string; shouldCleanup: boolean }> {
+    await mkdir(this.remoteMediaTempRoot, { recursive: true });
+    await this.cleanupExpiredRemoteUploadTempArtifacts();
+    const fileExtension = extname(fileName) || '.bin';
+    const safeBaseName =
+      basename(fileName, fileExtension).replace(/[^a-zA-Z0-9._-]/g, '_') ||
+      'remote-file';
+    const cacheKey = createHash('sha1').update(remoteUrl).digest('hex');
+    const tempPath = join(
+      this.remoteMediaTempRoot,
+      `${cacheKey}-${safeBaseName}${fileExtension}`,
+    );
+
+    if (existsSync(tempPath)) {
+      return {
+        resolvedPath: tempPath,
+        shouldCleanup: false,
+      };
+    }
+
+    const response = await fetch(remoteUrl);
+    if (!response.ok || !response.body) {
+      throw new Error(`下载远程媒体失败: ${response.status} ${response.statusText}`);
+    }
+
+    const readable = Readable.fromWeb(
+      response.body as unknown as import('node:stream/web').ReadableStream,
+    );
+    const writable = createWriteStream(tempPath);
+
+    await new Promise<void>((resolve, reject) => {
+      readable.on('error', reject);
+      writable.on('error', reject);
+      writable.on('finish', () => resolve());
+      readable.pipe(writable);
+    });
+
+    return {
+      resolvedPath: tempPath,
+      shouldCleanup: true,
+    };
+  }
+
+  private async cleanupRemoteUploadTempFiles(
+    tempFiles: Iterable<string>,
+    ctx: RequestContext,
+  ): Promise<void> {
+    const targets = [...new Set([...tempFiles].filter(Boolean))];
+    if (targets.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      targets.map(async (tempFile) => {
+        try {
+          await rm(tempFile, { force: true });
+        } catch (error) {
+          logger.warning('清理远程上传临时文件失败', {
+            ...ctx,
+            tempFile,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+    );
+  }
+
+  private async cleanupExpiredRemoteUploadTempArtifacts(): Promise<void> {
+    try {
+      if (!existsSync(this.remoteMediaTempRoot)) {
+        return;
+      }
+
+      const entries = await readdir(this.remoteMediaTempRoot, {
+        withFileTypes: true,
+      });
+      const now = Date.now();
+
+      await Promise.all(
+        entries.map(async (entry) => {
+          if (!entry.isFile()) {
+            return;
+          }
+
+          const filePath = join(this.remoteMediaTempRoot, entry.name);
+          const fileStat = await stat(filePath);
+          if (
+            now - fileStat.mtimeMs >
+            DOC_MEDIA_UPLOAD_LIMITS.tempFileTtlMs
+          ) {
+            await rm(filePath, { force: true });
+          }
+        }),
+      );
+    } catch (error) {
+      const ctx = requestContextService.createRequestContext({
+        operation: 'feishu.cleanupRemoteUploadTempArtifacts',
+        tenantId: 'feishu-service',
+      });
+      logger.warning('清理远程上传过期临时文件失败', {
+        ...ctx,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async mapWithConcurrencyLimit<T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+          results[currentIndex] = await mapper(items[currentIndex]!, currentIndex);
+        }
+      }),
+    );
+
+    return results;
   }
 
   private getDirectoryFromPath(filePath: string): string {

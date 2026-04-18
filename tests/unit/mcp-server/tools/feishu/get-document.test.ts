@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { ContentBlockSchema } from '@modelcontextprotocol/sdk/types.js';
 
 describe('飞书文档读取工具', () => {
   it('应该有正确的工具定义', async () => {
@@ -72,6 +73,7 @@ describe('飞书文档读取工具', () => {
           fileName: 'data.csv',
           mimeType: 'text/csv',
           byteLength: 14,
+          localPath: '/tmp/data.csv',
           previewText: 'alpha,beta\n1,2',
         },
       ],
@@ -98,9 +100,60 @@ describe('飞书文档读取工具', () => {
     expect(resourceBlock).toMatchObject({
       type: 'resource',
       resource: {
+        uri: 'file:///tmp/data.csv',
         mimeType: 'text/plain',
         text: expect.stringContaining('alpha,beta'),
       },
+    });
+    expect(ContentBlockSchema.safeParse(resourceBlock).success).toBe(true);
+  });
+
+  it('图片未内联时应该回退为文本提示块', async () => {
+    const { feishuGetDocumentTool } = await import(
+      '@/mcp-server/tools/definitions/feishu-get-document.tool.js'
+    );
+
+    const content = feishuGetDocumentTool.responseFormatter?.({
+      documentId: 'doc_456',
+      title: '图片降级文档',
+      content: '正文\n\n[图片1：oversized.png]',
+      revisionId: 7,
+      blocks: [
+        {
+          blockId: 'text_1',
+          type: 'text',
+          text: '正文',
+        },
+        {
+          blockId: 'image_1',
+          type: 'image',
+          fileToken: 'img_token_oversized',
+          placeholderText: '[图片1：oversized.png]',
+        },
+      ],
+      assets: [
+        {
+          fileToken: 'img_token_oversized',
+          type: 'image',
+          fileName: 'oversized.png',
+          mimeType: 'image/png',
+          byteLength: 3_000_000,
+          localPath: '/tmp/oversized.png',
+          deliveryMode: 'local_file_only',
+          status: 'skipped_too_large',
+          reason: '图片超过单张内联大小限制',
+        },
+      ],
+    });
+
+    expect(content?.map((block) => block.type)).toEqual(['text', 'text', 'text']);
+    expect(content?.[2]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('oversized.png'),
+    });
+    expect(content?.[2]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('/tmp/oversized.png'),
     });
   });
 });

@@ -5,6 +5,7 @@
  */
 
 import type { ContentBlock } from '@modelcontextprotocol/sdk/types.js';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 
@@ -102,6 +103,18 @@ const OutputSchema = z
             .string()
             .optional()
             .describe('附件的文本预览内容。'),
+          deliveryMode: z
+            .enum(['inline_base64', 'local_file_only'])
+            .optional()
+            .describe('媒体返回方式：内联 base64 或仅本地文件路径。'),
+          status: z
+            .enum(['downloaded', 'skipped_too_large', 'skipped_over_limit'])
+            .optional()
+            .describe('媒体处理状态。'),
+          reason: z
+            .string()
+            .optional()
+            .describe('媒体未内联或降级时的原因说明。'),
         }),
       )
       .describe('文档内解析出的图片与附件资产。'),
@@ -180,6 +193,53 @@ function buildAttachmentResourceText(asset: GetDocAsset): string {
   return lines.join('\n');
 }
 
+function buildAttachmentResourceUri(asset: GetDocAsset): string {
+  if (asset.localPath) {
+    return pathToFileURL(asset.localPath).toString();
+  }
+
+  return `feishu://attachment/${encodeURIComponent(asset.fileToken)}/${encodeURIComponent(asset.fileName)}`;
+}
+
+function buildAttachmentResourceMeta(asset: GetDocAsset): Record<string, unknown> {
+  return {
+    byteLength: asset.byteLength,
+    deliveryMode: asset.deliveryMode,
+    fileName: asset.fileName,
+    fileToken: asset.fileToken,
+    localPath: asset.localPath,
+    reason: asset.reason,
+    sourceMimeType: asset.mimeType,
+    status: asset.status,
+  };
+}
+
+function buildImageFallbackText(
+  block: GetDocBlock,
+  asset: GetDocAsset,
+): string {
+  const lines = [
+    block.placeholderText || `图片资源：${asset.fileName}`,
+    `文件名: ${asset.fileName}`,
+    `MIME 类型: ${asset.mimeType}`,
+    `大小: ${asset.byteLength} bytes`,
+  ];
+
+  if (asset.status) {
+    lines.push(`状态: ${asset.status}`);
+  }
+
+  if (asset.reason) {
+    lines.push(`原因: ${asset.reason}`);
+  }
+
+  if (asset.localPath) {
+    lines.push(`临时文件: ${asset.localPath}`);
+  }
+
+  return lines.join('\n');
+}
+
 function toMultimodalContentBlocks(
   blocks: GetDocBlock[],
   assets: GetDocAsset[],
@@ -220,7 +280,9 @@ function toMultimodalContentBlocks(
       contentBlocks.push({
         type: 'resource',
         resource: {
-          mimeType: asset.previewText ? 'text/plain' : asset.mimeType,
+          uri: buildAttachmentResourceUri(asset),
+          mimeType: 'text/plain',
+          _meta: buildAttachmentResourceMeta(asset),
           text: buildAttachmentResourceText(asset),
         },
       } as ContentBlock);
@@ -229,7 +291,7 @@ function toMultimodalContentBlocks(
 
     contentBlocks.push({
       type: 'text',
-      text: block.placeholderText || asset.fileName,
+      text: buildImageFallbackText(block, asset),
     });
   }
 

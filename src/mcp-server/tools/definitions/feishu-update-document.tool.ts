@@ -92,6 +92,14 @@ const InputSchema = z
       .boolean()
       .default(true)
       .describe('是否上传本地图片到飞书。'),
+    downloadRemoteImages: z
+      .boolean()
+      .default(false)
+      .describe('是否下载 Markdown 中的远程图片并转存到飞书。'),
+    downloadRemoteAttachments: z
+      .boolean()
+      .default(false)
+      .describe('是否下载 Markdown 中的远程附件链接并转存到飞书。'),
     uploadAttachments: z
       .boolean()
       .default(true)
@@ -194,6 +202,8 @@ async function updateLogic(
       ...(input.appId ? { appId: input.appId } : {}),
       targetType: 'wiki',
       uploadImages: input.uploadImages,
+      downloadRemoteImages: input.downloadRemoteImages,
+      downloadRemoteAttachments: input.downloadRemoteAttachments,
       uploadAttachments: input.uploadAttachments,
       removeFrontMatter: input.removeFrontMatter,
     },

@@ -14,21 +14,25 @@ import {
 } from '@/container/tokens.js';
 import type { FeishuApiProvider } from '@/services/feishu/providers/feishu-api.provider.js';
 import { requestContextService } from '@/utils/index.js';
-
-// 集成测试需要真实的飞书凭证
-const hasFeishuCredentials = !!(
-  config.feishu?.defaultAppId && config.feishu?.defaultAppSecret
-);
+import {
+  FEISHU_RUN_INTEGRATION_ENV,
+  getFeishuIntegrationSkipReason,
+  hasConfiguredFeishuCredentials,
+  hasFeishuCredentials,
+} from './auth-helper.js';
 
 describe('OAuth 集成测试', () => {
   let feishuApiProvider: FeishuApiProvider;
 
   beforeAll(async () => {
-    if (!hasFeishuCredentials) {
-      console.log('⚠️  跳过集成测试：缺少飞书凭证配置');
-      console.log(
-        '请在 .env 文件中配置 FEISHU_DEFAULT_APP_ID 和 FEISHU_DEFAULT_APP_SECRET',
-      );
+    const skipReason = getFeishuIntegrationSkipReason();
+    if (skipReason) {
+      console.log(`⚠️  跳过集成测试：${skipReason}`);
+      if (hasConfiguredFeishuCredentials()) {
+        console.log(
+          `如需执行交互式 OAuth 验证，请使用 ${FEISHU_RUN_INTEGRATION_ENV}=true 重新运行`,
+        );
+      }
       return;
     }
 
@@ -42,7 +46,7 @@ describe('OAuth 集成测试', () => {
   });
 
   it('应该有飞书配置', () => {
-    if (!hasFeishuCredentials) {
+    if (!hasConfiguredFeishuCredentials()) {
       expect(true).toBe(true); // 跳过测试
       return;
     }

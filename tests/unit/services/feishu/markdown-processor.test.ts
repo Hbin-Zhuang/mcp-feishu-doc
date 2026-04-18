@@ -131,6 +131,25 @@ author: '作者名'
       expect(result.content).toContain('https://example.com/image.png');
     });
 
+    it('启用 downloadRemoteImages 时应该将远程图片转成待上传媒体', () => {
+      const content = '![远程图](https://example.com/assets/diagram.png)';
+      const result = processor.process(content, '/base', {
+        processImages: true,
+        downloadRemoteImages: true,
+      });
+
+      expect(result.localFiles).toHaveLength(1);
+      expect(result.localFiles[0]).toMatchObject({
+        originalPath: 'https://example.com/assets/diagram.png',
+        remoteUrl: 'https://example.com/assets/diagram.png',
+        sourceType: 'remote',
+        isImage: true,
+        fileName: 'diagram.png',
+        altText: '远程图',
+      });
+      expect(result.content).toContain(result.localFiles[0]!.placeholder);
+    });
+
     it('应该在禁用图片处理时保留原始语法', () => {
       const content = '![图片](./test.png)';
       const result = processor.process(content, '/base', {
@@ -153,6 +172,30 @@ author: '作者名'
 
       expect(result.localFiles).toHaveLength(3);
       expect(result.localFiles.every((f) => f.isImage)).toBe(true);
+    });
+  });
+
+  describe('远程附件处理', () => {
+    it('启用 downloadRemoteAttachments 时应该将远程附件链接转成待上传媒体', () => {
+      const content = '[季度报告](https://example.com/files/report.pdf)';
+      const result = processor.process(content, '/base', {
+        processAttachments: true,
+        downloadRemoteAttachments: true,
+      });
+
+      expect(result.localFiles).toHaveLength(1);
+      expect(result.localFiles[0]).toMatchObject({
+        originalPath: 'https://example.com/files/report.pdf',
+        remoteUrl: 'https://example.com/files/report.pdf',
+        sourceType: 'remote',
+        isImage: false,
+        fileName: 'report.pdf',
+        altText: '季度报告',
+      });
+      expect(result.content).toContain(result.localFiles[0]!.placeholder);
+      expect(result.content).not.toContain(
+        '[季度报告](https://example.com/files/report.pdf)',
+      );
     });
   });
 

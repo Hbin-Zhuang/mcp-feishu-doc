@@ -192,6 +192,32 @@ export const DOC_IMAGE_EMBED_LIMITS = {
 };
 
 /**
+ * DOC_MEDIA_READ_LIMITS const 文档媒体读取限制.
+ */
+export const DOC_MEDIA_READ_LIMITS = {
+  /** 单次临时下载链接请求最多携带的 file token 数量 */
+  tmpDownloadUrlBatchSize: 20,
+  /** 下载文档媒体时的最大并发数 */
+  downloadConcurrency: 3,
+};
+
+/**
+ * DOC_MEDIA_UPLOAD_LIMITS const 文档媒体上传限制.
+ */
+export const DOC_MEDIA_UPLOAD_LIMITS = {
+  /** 单篇文档允许回填的最大媒体数量 */
+  maxMediaCount: 20,
+  /** 单篇文档允许回填的媒体总字节数 */
+  maxTotalBytes: 25 * 1024 * 1024,
+  /** 单个文档块内媒体上传与替换 token 的并发度 */
+  uploadConcurrency: 2,
+  /** 远程图片下载到本地临时文件时的最大并发数 */
+  remoteDownloadConcurrency: 3,
+  /** 远程上传临时文件的保留时长 */
+  tempFileTtlMs: 24 * 60 * 60 * 1000,
+};
+
+/**
  * DOC_FILE_PREVIEW_LIMITS const 文档附件预览限制.
  */
 export const DOC_FILE_PREVIEW_LIMITS = {

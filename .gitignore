@@ -152,6 +152,7 @@ test-perf-temp/
 # CACHE & TEMPORARY FILES
 # =============================================================================
 .cache/
+.worktrees/
 .parcel-cache/
 *.bak
 
@@ -167,6 +168,7 @@ test-perf-temp/
 !sample.template.*
 mcp-servers.json
 mcp-config.json
+mcp.local.json
 .wrangler
 worker-configuration.d.ts
 

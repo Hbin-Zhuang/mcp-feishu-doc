@@ -7,6 +7,8 @@
 import type { RequestContext } from '@/utils/internal/requestContext.js';
 import type {
   FeishuAuth,
+  FeishuDocumentMediaPatch,
+  FeishuDocumentMediaPatchResult,
   FeishuDocumentContent,
   FeishuDocument,
   FeishuFolder,
@@ -150,6 +152,18 @@ export interface IFeishuApiProvider {
   ): Promise<FeishuDocumentContent>;
 
   /**
+   * replaceDocumentPlaceholdersWithMedia method 将导入后的占位符替换为图片或附件块.
+   * @param accessToken 访问令牌
+   * @param documentId 文档 ID
+   * @param patches 占位符与本地媒体文件的映射
+   */
+  replaceDocumentPlaceholdersWithMedia(
+    accessToken: string,
+    documentId: string,
+    patches: FeishuDocumentMediaPatch[],
+  ): Promise<FeishuDocumentMediaPatchResult>;
+
+  /**
    * searchDocuments method 搜索云空间文档.
    * @param accessToken 访问令牌
    * @param query 搜索关键词
@@ -181,6 +195,7 @@ export interface IFeishuApiProvider {
     accessToken: string,
     filePath: string,
     fileType: 'image' | 'file',
+    parentNodeToken: string,
   ): Promise<string>;
 
   /**
@@ -196,6 +211,7 @@ export interface IFeishuApiProvider {
     buffer: Buffer,
     fileName: string,
     fileType: 'image' | 'file',
+    parentNodeToken: string,
   ): Promise<string>;
 
   /**
@@ -271,8 +287,12 @@ export interface ProcessConfig {
   removeFrontMatter?: boolean;
   /** 是否处理本地图片 */
   processImages?: boolean;
+  /** 是否将远程图片下载后作为本地媒体上传 */
+  downloadRemoteImages?: boolean;
   /** 是否处理本地附件 */
   processAttachments?: boolean;
+  /** 是否将远程附件下载后作为本地媒体上传 */
+  downloadRemoteAttachments?: boolean;
   /** 代码块过滤语言列表 */
   codeBlockFilterLanguages?: string[];
 }
@@ -529,11 +549,15 @@ export interface IFeishuService {
         targetType: 'drive' | 'wiki';
         targetId?: string;
         uploadImages?: boolean;
+        downloadRemoteImages?: boolean;
+        downloadRemoteAttachments?: boolean;
         uploadAttachments?: boolean;
         removeFrontMatter?: boolean;
       }>;
       concurrency?: number;
       uploadImages?: boolean;
+      downloadRemoteImages?: boolean;
+      downloadRemoteAttachments?: boolean;
       uploadAttachments?: boolean;
       removeFrontMatter?: boolean;
       appId?: string;

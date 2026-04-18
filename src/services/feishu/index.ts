@@ -33,6 +33,8 @@ export type {
   FeishuDocumentAsset,
   FeishuDocumentAssetType,
   FeishuDocumentContent,
+  FeishuDocumentMediaPatch,
+  FeishuDocumentMediaPatchType,
   FeishuDocCreateResponse,
   FeishuDocument,
   FeishuDocumentReadBlock,

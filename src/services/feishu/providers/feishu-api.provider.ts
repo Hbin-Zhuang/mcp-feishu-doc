@@ -10,6 +10,8 @@ import type {
   FeishuDocument,
   FeishuDocumentAsset,
   FeishuDocumentContent,
+  FeishuDocumentMediaPatch,
+  FeishuDocumentMediaPatchResult,
   FeishuDocumentReadBlock,
   FeishuFolder,
   FeishuUserInfo,
@@ -17,12 +19,17 @@ import type {
   FeishuWikiNode,
   FeishuOAuthResponse,
   FeishuApiResponse,
+  MediaUploadFailure,
+  UploadedFile,
 } from '../types.js';
 import {
   FEISHU_CONFIG,
+  DOC_IMAGE_EMBED_LIMITS,
+  DOC_MEDIA_READ_LIMITS,
   TOKEN_EXPIRED_CODES,
   FEISHU_ERROR_MESSAGES,
   DOC_FILE_PREVIEW_LIMITS,
+  DOC_MEDIA_UPLOAD_LIMITS,
 } from '../constants.js';
 import { McpError, JsonRpcErrorCode } from '@/types-global/errors.js';
 import { logger, pdfParser, requestContextService } from '@/utils/index.js';
@@ -52,6 +59,23 @@ interface FetchedMediaArtifact {
   mimeType: string;
   bytes: Uint8Array;
   localPath?: string;
+}
+
+interface ImageDeliveryDecision {
+  deliveryMode: FeishuDocumentAsset['deliveryMode'];
+  status: FeishuDocumentAsset['status'];
+  reason?: string;
+}
+
+interface BlockPatchGroup {
+  targetBlockId: string;
+  patches: FeishuDocumentMediaPatch[];
+}
+
+interface BlockReplacementPlanItem {
+  kind: 'media' | 'text';
+  patch?: FeishuDocumentMediaPatch;
+  text?: string;
 }
 
 /**
@@ -505,45 +529,7 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   ): Promise<FeishuDocumentContent> {
     // 获取文档基础信息
     const meta = await this.getDocumentMeta(accessToken, documentId);
-
-    // 获取文档所有 block（按页读取）
-    const allBlocks: Array<{
-      block_id: string;
-      block_type: number;
-      parent_id: string;
-      children?: string[];
-      [key: string]: unknown;
-    }> = [];
-
-    let pageToken: string | undefined;
-    do {
-      const params = new URLSearchParams({ page_size: '200', document_revision_id: '-1' });
-      if (pageToken) params.set('page_token', pageToken);
-      const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks?${params.toString()}`;
-      const resp = await this.requestWithAuth<
-        FeishuApiResponse<{
-          items: Array<{
-            block_id: string;
-            block_type: number;
-            parent_id: string;
-            children?: string[];
-            [key: string]: unknown;
-          }>;
-          has_more: boolean;
-          page_token?: string;
-        }>
-      >(url, accessToken, { method: 'GET' });
-
-      if (resp.code !== 0 || !resp.data) {
-        throw new McpError(
-          JsonRpcErrorCode.InternalError,
-          `获取文档内容失败: ${resp.msg || '未知错误'}`,
-        );
-      }
-
-      allBlocks.push(...resp.data.items);
-      pageToken = resp.data.has_more ? resp.data.page_token : undefined;
-    } while (pageToken);
+    const allBlocks = await this.fetchAllDocumentBlocks(accessToken, documentId);
 
     const normalizedBlocks = this.normalizeDocumentReadBlocks(allBlocks);
     const assetsByToken = await this.resolveDocumentReadAssets(
@@ -562,6 +548,52 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       revisionId: meta.revisionId,
       blocks,
       assets: Array.from(assetsByToken.values()),
+    };
+  }
+
+  /**
+   * replaceDocumentPlaceholdersWithMedia method 将占位符文本替换为图片或附件块.
+   */
+  public async replaceDocumentPlaceholdersWithMedia(
+    accessToken: string,
+    documentId: string,
+    patches: FeishuDocumentMediaPatch[],
+  ): Promise<FeishuDocumentMediaPatchResult> {
+    const uploadedFiles: UploadedFile[] = [];
+    const mediaUploadFailures: MediaUploadFailure[] = [];
+    const blocks =
+      patches.length > 0
+        ? await this.fetchAllDocumentBlocks(accessToken, documentId)
+        : [];
+    const { groups, unresolvedPatches } = this.groupPatchesByTargetBlock(
+      blocks,
+      patches,
+    );
+
+    mediaUploadFailures.push(
+      ...unresolvedPatches.map((patch) => ({
+        originalPath: patch.originalPath,
+        fileName: patch.fileName,
+        isImage: patch.type === 'image',
+        error: `未找到占位符: ${patch.placeholder}`,
+        status: 'upload_failed' as const,
+      })),
+    );
+
+    for (const group of groups) {
+      const groupResult = await this.replaceBlockPlaceholdersWithMedia(
+        accessToken,
+        documentId,
+        group,
+        blocks,
+      );
+      uploadedFiles.push(...groupResult.uploadedFiles);
+      mediaUploadFailures.push(...groupResult.mediaUploadFailures);
+    }
+
+    return {
+      uploadedFiles,
+      mediaUploadFailures,
     };
   }
 
@@ -684,24 +716,65 @@ export class FeishuApiProvider implements IFeishuApiProvider {
 
     const urlMap = await this.batchGetTmpDownloadUrls(accessToken, fileTokens);
     const assets = new Map<string, FeishuDocumentAsset>();
+    let inlineImageCount = 0;
+    let inlineImageBytes = 0;
+    const uniqueMediaBlocks = blocks.filter((block, index) => {
+      if (!block.fileToken) {
+        return false;
+      }
 
-    for (const block of blocks) {
+      return (
+        fileTokens.includes(block.fileToken) &&
+        blocks.findIndex(
+          (candidate) => candidate.fileToken === block.fileToken,
+        ) === index
+      );
+    });
+    const artifacts = await this.mapWithConcurrencyLimit(
+      uniqueMediaBlocks,
+      DOC_MEDIA_READ_LIMITS.downloadConcurrency,
+      async (block) => {
+        const fileToken = block.fileToken;
+        if (!fileToken) {
+          return null;
+        }
+
+        const tmpUrl = urlMap.get(fileToken);
+        if (!tmpUrl) {
+          return null;
+        }
+
+        const artifact = await this.fetchMediaArtifact(
+          tmpUrl,
+          accessToken,
+          documentId,
+          fileToken,
+        );
+        if (!artifact) {
+          return null;
+        }
+
+        return { fileToken, artifact };
+      },
+    );
+    const artifactsByToken = new Map(
+      artifacts
+        .filter(
+          (
+            item,
+          ): item is { fileToken: string; artifact: FetchedMediaArtifact } =>
+            Boolean(item),
+        )
+        .map((item) => [item.fileToken, item.artifact]),
+    );
+
+    for (const block of uniqueMediaBlocks) {
       const fileToken = block.fileToken;
       if (!fileToken || assets.has(fileToken)) {
         continue;
       }
 
-      const tmpUrl = urlMap.get(fileToken);
-      if (!tmpUrl) {
-        continue;
-      }
-
-      const artifact = await this.fetchMediaArtifact(
-        tmpUrl,
-        accessToken,
-        documentId,
-        fileToken,
-      );
+      const artifact = artifactsByToken.get(fileToken);
       if (!artifact) {
         continue;
       }
@@ -720,8 +793,29 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       }
 
       if (block.type === 'image') {
-        asset.base64Data = Buffer.from(artifact.bytes).toString('base64');
+        const decision = this.decideImageDeliveryMode(
+          artifact.bytes.length,
+          inlineImageCount,
+          inlineImageBytes,
+        );
+        if (decision.deliveryMode) {
+          asset.deliveryMode = decision.deliveryMode;
+        }
+        if (decision.status) {
+          asset.status = decision.status;
+        }
+        if (decision.reason) {
+          asset.reason = decision.reason;
+        }
+
+        if (decision.deliveryMode === 'inline_base64') {
+          asset.base64Data = Buffer.from(artifact.bytes).toString('base64');
+          inlineImageCount += 1;
+          inlineImageBytes += artifact.bytes.length;
+        }
       } else {
+        asset.deliveryMode = 'local_file_only';
+        asset.status = 'downloaded';
         const previewText = await this.extractDocumentFilePreview(
           artifact.bytes,
           mimeType,
@@ -735,6 +829,75 @@ export class FeishuApiProvider implements IFeishuApiProvider {
     }
 
     return assets;
+  }
+
+  /**
+   * mapWithConcurrencyLimit method 以有限并发执行异步映射.
+   */
+  private async mapWithConcurrencyLimit<T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+          results[currentIndex] = await mapper(items[currentIndex]!, currentIndex);
+        }
+      }),
+    );
+
+    return results;
+  }
+
+  /**
+   * decideImageDeliveryMode method 根据限制决定图片返回方式.
+   */
+  private decideImageDeliveryMode(
+    byteLength: number,
+    inlineImageCount: number,
+    inlineImageBytes: number,
+  ): ImageDeliveryDecision {
+    if (byteLength > DOC_IMAGE_EMBED_LIMITS.maxSingleImageBytes) {
+      return {
+        deliveryMode: 'local_file_only',
+        status: 'skipped_too_large',
+        reason: '图片超过单张内联大小限制',
+      };
+    }
+
+    if (inlineImageCount >= DOC_IMAGE_EMBED_LIMITS.maxImages) {
+      return {
+        deliveryMode: 'local_file_only',
+        status: 'skipped_over_limit',
+        reason: '图片数量超过内联上限',
+      };
+    }
+
+    if (
+      inlineImageBytes + byteLength > DOC_IMAGE_EMBED_LIMITS.maxTotalBytes
+    ) {
+      return {
+        deliveryMode: 'local_file_only',
+        status: 'skipped_over_limit',
+        reason: '图片总内联大小超过限制',
+      };
+    }
+
+    return {
+      deliveryMode: 'inline_base64',
+      status: 'downloaded',
+    };
   }
 
   /**
@@ -1044,29 +1207,40 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   ): Promise<Map<string, string>> {
     if (fileTokens.length === 0) return new Map();
 
-    const params = new URLSearchParams();
-    fileTokens.forEach((t) => params.append('file_tokens', t));
-    const url = `${FEISHU_CONFIG.BASE_URL}/drive/v1/medias/batch_get_tmp_download_url?${params.toString()}`;
-
-    const resp = await this.requestWithAuth<
-      FeishuApiResponse<{
-        tmp_download_urls?: Array<{
-          file_token: string;
-          tmp_download_url: string;
-        }>;
-      }>
-    >(url, accessToken, { method: 'GET' });
-
-    if (resp.code !== 0 || !resp.data?.tmp_download_urls) {
-      return new Map();
-    }
-
     const map = new Map<string, string>();
-    for (const u of resp.data.tmp_download_urls) {
-      if (u.file_token && u.tmp_download_url) {
-        map.set(u.file_token, u.tmp_download_url);
+    for (
+      let start = 0;
+      start < fileTokens.length;
+      start += DOC_MEDIA_READ_LIMITS.tmpDownloadUrlBatchSize
+    ) {
+      const batch = fileTokens.slice(
+        start,
+        start + DOC_MEDIA_READ_LIMITS.tmpDownloadUrlBatchSize,
+      );
+      const params = new URLSearchParams();
+      batch.forEach((t) => params.append('file_tokens', t));
+      const url = `${FEISHU_CONFIG.BASE_URL}/drive/v1/medias/batch_get_tmp_download_url?${params.toString()}`;
+
+      const resp = await this.requestWithAuth<
+        FeishuApiResponse<{
+          tmp_download_urls?: Array<{
+            file_token: string;
+            tmp_download_url: string;
+          }>;
+        }>
+      >(url, accessToken, { method: 'GET' });
+
+      if (resp.code !== 0 || !resp.data?.tmp_download_urls) {
+        continue;
+      }
+
+      for (const item of resp.data.tmp_download_urls) {
+        if (item.file_token && item.tmp_download_url) {
+          map.set(item.file_token, item.tmp_download_url);
+        }
       }
     }
+
     return map;
   }
 
@@ -1114,13 +1288,13 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       }
       case 22:
       case 27: {
-        const b = block as { image?: { file_token?: string } };
-        const ft = b.image?.file_token;
+        const b = block as { image?: { file_token?: string; token?: string } };
+        const ft = b.image?.file_token ?? b.image?.token;
         return ft ? { type: 'image', fileToken: ft } : null;
       }
       case 23: {
-        const b = block as { file?: { file_token?: string } };
-        const ft = b.file?.file_token;
+        const b = block as { file?: { file_token?: string; token?: string } };
+        const ft = b.file?.file_token ?? b.file?.token;
         return ft ? { type: 'file', fileToken: ft } : null;
       }
       default: {
@@ -1157,8 +1331,8 @@ export class FeishuApiProvider implements IFeishuApiProvider {
     accessToken: string,
     filePath: string,
     fileType: 'image' | 'file',
+    parentNodeToken: string,
   ): Promise<string> {
-    // 读取文件
     const fs = await import('node:fs');
     const path = await import('node:path');
 
@@ -1169,10 +1343,44 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       );
     }
 
-    const buffer = fs.readFileSync(filePath);
     const fileName = path.basename(filePath);
+    const mimeType = this.getMimeType(fileName);
+    const fileStat = fs.statSync(filePath);
+    const formData = new FormData();
+    const openAsBlob = (fs as typeof fs & {
+      openAsBlob?: (
+        path: string,
+        options?: { type?: string },
+      ) => Promise<Blob>;
+    }).openAsBlob;
+    const fileBlob =
+      typeof openAsBlob === 'function'
+        ? await openAsBlob(filePath, { type: mimeType })
+        : new Blob([fs.readFileSync(filePath)], { type: mimeType });
 
-    return this.uploadFileBuffer(accessToken, buffer, fileName, fileType);
+    formData.append('file_name', fileName);
+    formData.append(
+      'parent_type',
+      fileType === 'image' ? 'docx_image' : 'docx_file',
+    );
+    formData.append('parent_node', parentNodeToken);
+    formData.append('size', String(fileStat.size));
+    formData.append('file', fileBlob, fileName);
+
+    const response = await this.requestWithAuth<
+      FeishuApiResponse<{ file_token: string }>
+    >(FEISHU_CONFIG.UPLOAD_URL, accessToken, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.code !== 0 || !response.data) {
+      const errorMsg =
+        FEISHU_ERROR_MESSAGES[response.code] ?? response.msg ?? '文件上传失败';
+      throw new McpError(JsonRpcErrorCode.InternalError, errorMsg);
+    }
+
+    return response.data.file_token;
   }
 
   /**
@@ -1183,58 +1391,34 @@ export class FeishuApiProvider implements IFeishuApiProvider {
     buffer: Buffer,
     fileName: string,
     fileType: 'image' | 'file',
+    parentNodeToken: string,
   ): Promise<string> {
-    const boundary = `---${Date.now()}${Math.random().toString(36).substring(2)}`;
-    const parentType = fileType === 'image' ? 'docx_image' : 'docx_file';
+    if (!parentNodeToken) {
+      throw new McpError(
+        JsonRpcErrorCode.InvalidParams,
+        '上传文档媒体时必须提供 parentNodeToken',
+      );
+    }
 
-    // 构建 multipart/form-data
-    const parts: Buffer[] = [];
-
-    // file_name 字段
-    parts.push(Buffer.from(`--${boundary}\r\n`));
-    parts.push(
-      Buffer.from('Content-Disposition: form-data; name="file_name"\r\n\r\n'),
+    const formData = new FormData();
+    formData.append('file_name', fileName);
+    formData.append(
+      'parent_type',
+      fileType === 'image' ? 'docx_image' : 'docx_file',
     );
-    parts.push(Buffer.from(`${fileName}\r\n`));
-
-    // parent_type 字段
-    parts.push(Buffer.from(`--${boundary}\r\n`));
-    parts.push(
-      Buffer.from('Content-Disposition: form-data; name="parent_type"\r\n\r\n'),
+    formData.append('parent_node', parentNodeToken);
+    formData.append('size', String(buffer.length));
+    formData.append(
+      'file',
+      new Blob([buffer], { type: this.getMimeType(fileName) }),
+      fileName,
     );
-    parts.push(Buffer.from(`${parentType}\r\n`));
-
-    // size 字段
-    parts.push(Buffer.from(`--${boundary}\r\n`));
-    parts.push(
-      Buffer.from('Content-Disposition: form-data; name="size"\r\n\r\n'),
-    );
-    parts.push(Buffer.from(`${buffer.length}\r\n`));
-
-    // file 字段
-    parts.push(Buffer.from(`--${boundary}\r\n`));
-    parts.push(
-      Buffer.from(
-        `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`,
-      ),
-    );
-    parts.push(
-      Buffer.from(`Content-Type: ${this.getMimeType(fileName)}\r\n\r\n`),
-    );
-    parts.push(buffer);
-    parts.push(Buffer.from('\r\n'));
-
-    // 结束边界
-    parts.push(Buffer.from(`--${boundary}--\r\n`));
-
-    const body = Buffer.concat(parts);
 
     const response = await this.requestWithAuth<
       FeishuApiResponse<{ file_token: string }>
     >(FEISHU_CONFIG.UPLOAD_URL, accessToken, {
       method: 'POST',
-      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-      body,
+      body: formData,
     });
 
     if (response.code !== 0 || !response.data) {
@@ -1430,6 +1614,782 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       }
       return result;
     });
+  }
+
+  /**
+   * fetchAllDocumentBlocks method 获取文档全部 block.
+   */
+  private async fetchAllDocumentBlocks(
+    accessToken: string,
+    documentId: string,
+  ): Promise<DocumentBlockRecord[]> {
+    const allBlocks: DocumentBlockRecord[] = [];
+
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        page_size: '200',
+        document_revision_id: '-1',
+      });
+      if (pageToken) params.set('page_token', pageToken);
+      const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks?${params.toString()}`;
+      const resp = await this.requestWithAuth<
+        FeishuApiResponse<{
+          items: DocumentBlockRecord[];
+          has_more: boolean;
+          page_token?: string;
+        }>
+      >(url, accessToken, { method: 'GET' });
+
+      if (resp.code !== 0 || !resp.data) {
+        throw new McpError(
+          JsonRpcErrorCode.InternalError,
+          `获取文档内容失败: ${resp.msg || '未知错误'}`,
+        );
+      }
+
+      allBlocks.push(...resp.data.items);
+      pageToken = resp.data.has_more ? resp.data.page_token : undefined;
+    } while (pageToken);
+
+    return allBlocks;
+  }
+
+  /**
+   * replaceSinglePlaceholderWithMedia method 将单个占位符替换为媒体块.
+   */
+  private groupPatchesByTargetBlock(
+    blocks: DocumentBlockRecord[],
+    patches: FeishuDocumentMediaPatch[],
+  ): {
+    groups: BlockPatchGroup[];
+    unresolvedPatches: FeishuDocumentMediaPatch[];
+  } {
+    const groupedPatches = new Map<string, FeishuDocumentMediaPatch[]>();
+    const unresolvedPatches: FeishuDocumentMediaPatch[] = [];
+
+    for (const patch of patches) {
+      const placeholderVariants = this.buildPlaceholderVariants(patch.placeholder);
+      const targetBlock = blocks.find((block) => {
+        const text = this.extractTextContentForPatch(block);
+        return placeholderVariants.some((placeholder) => text.includes(placeholder));
+      });
+
+      if (!targetBlock) {
+        unresolvedPatches.push(patch);
+        continue;
+      }
+
+      const group = groupedPatches.get(targetBlock.block_id) ?? [];
+      group.push(patch);
+      groupedPatches.set(targetBlock.block_id, group);
+    }
+
+    const groups = blocks
+      .map((block) => {
+        const targetPatches = groupedPatches.get(block.block_id);
+        if (!targetPatches?.length) {
+          return null;
+        }
+
+        return {
+          targetBlockId: block.block_id,
+          patches: targetPatches,
+        } satisfies BlockPatchGroup;
+      })
+      .filter((group): group is BlockPatchGroup => Boolean(group));
+
+    return {
+      groups,
+      unresolvedPatches,
+    };
+  }
+
+  private async replaceBlockPlaceholdersWithMedia(
+    accessToken: string,
+    documentId: string,
+    group: BlockPatchGroup,
+    blocks: DocumentBlockRecord[],
+  ): Promise<FeishuDocumentMediaPatchResult> {
+    const targetBlock = blocks.find(
+      (block) => block.block_id === group.targetBlockId,
+    );
+    if (!targetBlock) {
+      return {
+        uploadedFiles: [],
+        mediaUploadFailures: group.patches.map((patch) => ({
+          originalPath: patch.originalPath,
+          fileName: patch.fileName,
+          isImage: patch.type === 'image',
+          error: `未找到占位符: ${patch.placeholder}`,
+          status: 'upload_failed',
+        })),
+      };
+    }
+
+    const originalText = this.extractTextContentForPatch(targetBlock);
+    const parentId = targetBlock.parent_id || documentId;
+    const siblingIndex = this.resolveSiblingIndex(blocks, targetBlock, parentId);
+    let insertIndex = siblingIndex;
+    let createdChildren: DocumentBlockRecord[] = [];
+    let originalTextUpdated = false;
+    let originalBlockDeleted = false;
+
+    try {
+      const occurrences = group.patches
+        .map((patch) => {
+          const placeholderVariants = this.buildPlaceholderVariants(
+            patch.placeholder,
+          );
+          const matchedPlaceholder = placeholderVariants.find((placeholder) =>
+            originalText.includes(placeholder),
+          );
+          if (!matchedPlaceholder) {
+            return null;
+          }
+
+          return {
+            patch,
+            matchedPlaceholder,
+            index: originalText.indexOf(matchedPlaceholder),
+          };
+        })
+        .filter(
+          (
+            occurrence,
+          ): occurrence is {
+            patch: FeishuDocumentMediaPatch;
+            matchedPlaceholder: string;
+            index: number;
+          } => Boolean(occurrence),
+        )
+        .sort((left, right) => left.index - right.index);
+
+      if (occurrences.length !== group.patches.length) {
+        throw new McpError(
+          JsonRpcErrorCode.InvalidParams,
+          '存在无法定位的占位符',
+        );
+      }
+
+      const textSegments: string[] = [];
+      let cursor = 0;
+      for (const occurrence of occurrences) {
+        textSegments.push(originalText.slice(cursor, occurrence.index).trim());
+        cursor = occurrence.index + occurrence.matchedPlaceholder.length;
+      }
+      textSegments.push(originalText.slice(cursor).trim());
+
+      const leadingText = textSegments[0] ?? '';
+      const planItems: BlockReplacementPlanItem[] = [];
+      for (let index = 0; index < occurrences.length; index += 1) {
+        planItems.push({
+          kind: 'media',
+          patch: occurrences[index]!.patch,
+        });
+        const trailingText = textSegments[index + 1] ?? '';
+        if (trailingText) {
+          planItems.push({
+            kind: 'text',
+            text: trailingText,
+          });
+        }
+      }
+
+      insertIndex = leadingText ? siblingIndex + 1 : siblingIndex;
+      createdChildren = await this.createBlocksAfterIndex(
+        accessToken,
+        documentId,
+        parentId,
+        insertIndex,
+        planItems.map((item) =>
+          item.kind === 'media'
+            ? this.buildMediaChildBlock(item.patch!)
+            : this.buildTextChildBlock(item.text!),
+        ),
+      );
+
+      this.mergeCreatedChildrenIntoBlockState(
+        blocks,
+        parentId,
+        insertIndex,
+        createdChildren,
+      );
+
+      const mediaAssignments = planItems
+        .map((item, index) => ({
+          item,
+          createdBlock: createdChildren[index],
+        }))
+        .filter(
+          (
+            assignment,
+          ): assignment is {
+            item: BlockReplacementPlanItem & { kind: 'media'; patch: FeishuDocumentMediaPatch };
+            createdBlock: DocumentBlockRecord | undefined;
+          } => assignment.item.kind === 'media',
+        );
+
+      const uploadedFiles = await this.mapWithConcurrencyLimit(
+        mediaAssignments,
+        DOC_MEDIA_UPLOAD_LIMITS.uploadConcurrency,
+        async ({ item, createdBlock }) => {
+          const mediaBlockId = this.resolveCreatedMediaBlockId(
+            createdBlock,
+            item.patch,
+          );
+          const uploadPath = item.patch.resolvedPath ?? item.patch.originalPath;
+          const fileToken = await this.uploadFile(
+            accessToken,
+            uploadPath,
+            item.patch.type,
+            mediaBlockId,
+          );
+
+          await this.replaceMediaBlockToken(
+            accessToken,
+            documentId,
+            mediaBlockId,
+            item.patch.type,
+            fileToken,
+          );
+
+          return {
+            originalPath: item.patch.originalPath,
+            fileName: item.patch.fileName,
+            fileKey: fileToken,
+            isImage: item.patch.type === 'image',
+          } satisfies UploadedFile;
+        },
+      );
+
+      if (leadingText) {
+        await this.updateTextBlock(
+          accessToken,
+          documentId,
+          targetBlock.block_id,
+          leadingText,
+        );
+        this.setTextContentForPatchBlock(targetBlock, leadingText);
+        originalTextUpdated = true;
+      } else {
+        await this.deleteChildBlock(
+          accessToken,
+          documentId,
+          parentId,
+          insertIndex + createdChildren.length,
+          insertIndex + createdChildren.length + 1,
+        );
+        this.removeBlockFromState(blocks, parentId, targetBlock.block_id);
+        originalBlockDeleted = true;
+      }
+
+      return {
+        uploadedFiles,
+        mediaUploadFailures: [],
+      };
+    } catch (error) {
+      await this.rollbackGroupedReplacement({
+        accessToken,
+        documentId,
+        parentId,
+        insertIndex,
+        createdChildren,
+        blocks,
+        targetBlock,
+        originalText,
+        originalTextUpdated,
+        originalBlockDeleted,
+      });
+
+      const message =
+        error instanceof Error ? error.message : '文档媒体回填失败';
+      return {
+        uploadedFiles: [],
+        mediaUploadFailures: group.patches.map((patch) => ({
+          originalPath: patch.originalPath,
+          fileName: patch.fileName,
+          isImage: patch.type === 'image',
+          error: message,
+          status: 'upload_failed',
+        })),
+      };
+    }
+  }
+
+  /**
+   * buildPlaceholderVariants method 生成占位符的兼容匹配候选.
+   */
+  private buildPlaceholderVariants(placeholder: string): string[] {
+    const variants = new Set([placeholder]);
+    const normalized = placeholder.replace(/^_+|_+$/g, '');
+    if (normalized) {
+      variants.add(normalized);
+    }
+    return Array.from(variants);
+  }
+
+  /**
+   * rollbackGroupedReplacement method 清理分组回填失败时创建的临时块并尽力恢复原文本.
+   */
+  private async rollbackGroupedReplacement(params: {
+    accessToken: string;
+    documentId: string;
+    parentId: string;
+    insertIndex: number;
+    createdChildren: DocumentBlockRecord[];
+    blocks: DocumentBlockRecord[];
+    targetBlock: DocumentBlockRecord;
+    originalText: string;
+    originalTextUpdated: boolean;
+    originalBlockDeleted: boolean;
+  }): Promise<void> {
+    const {
+      accessToken,
+      documentId,
+      parentId,
+      insertIndex,
+      createdChildren,
+      blocks,
+      targetBlock,
+      originalText,
+      originalTextUpdated,
+      originalBlockDeleted,
+    } = params;
+
+    const ctx = requestContextService.createRequestContext({
+      operation: 'feishuRollbackGroupedMediaReplacement',
+      additionalContext: {
+        documentId,
+        parentId,
+        targetBlockId: targetBlock.block_id,
+      },
+    });
+
+    if (createdChildren.length > 0) {
+      try {
+        await this.deleteChildBlock(
+          accessToken,
+          documentId,
+          parentId,
+          insertIndex,
+          insertIndex + createdChildren.length,
+        );
+        this.removeCreatedChildrenFromState(
+          blocks,
+          parentId,
+          createdChildren.map((child) => child.block_id),
+        );
+      } catch (cleanupError) {
+        const cleanupMessage =
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError);
+        logger.warning(
+          '文档媒体回填失败后清理创建的子块失败',
+          { ...ctx, cleanupError: cleanupMessage },
+        );
+      }
+    }
+
+    if (originalTextUpdated && !originalBlockDeleted) {
+      try {
+        await this.updateTextBlock(
+          accessToken,
+          documentId,
+          targetBlock.block_id,
+          originalText,
+        );
+        this.setTextContentForPatchBlock(targetBlock, originalText);
+      } catch (restoreError) {
+        const restoreMessage =
+          restoreError instanceof Error
+            ? restoreError.message
+            : String(restoreError);
+        logger.warning(
+          '文档媒体回填失败后恢复原始文本失败',
+          { ...ctx, restoreError: restoreMessage },
+        );
+      }
+    }
+  }
+
+  /**
+   * mergeCreatedChildrenIntoBlockState method 将新创建的块合并到本地 block 状态.
+   */
+  private mergeCreatedChildrenIntoBlockState(
+    blocks: DocumentBlockRecord[],
+    parentId: string,
+    insertIndex: number,
+    createdChildren: DocumentBlockRecord[],
+  ): void {
+    if (createdChildren.length === 0) {
+      return;
+    }
+
+    const existingIds = new Set(blocks.map((block) => block.block_id));
+    const childrenToInsert = createdChildren.filter(
+      (child) => !existingIds.has(child.block_id),
+    );
+
+    if (childrenToInsert.length === 0) {
+      return;
+    }
+
+    blocks.push(...childrenToInsert);
+
+    const parentBlock = blocks.find((block) => block.block_id === parentId);
+    if (!parentBlock) {
+      return;
+    }
+
+    if (!parentBlock.children) {
+      parentBlock.children = [];
+    }
+
+    parentBlock.children.splice(
+      insertIndex,
+      0,
+      ...childrenToInsert.map((child) => child.block_id),
+    );
+  }
+
+  /**
+   * setTextContentForPatchBlock method 更新本地 block 状态中的文本内容.
+   */
+  private setTextContentForPatchBlock(
+    block: DocumentBlockRecord,
+    text: string,
+  ): void {
+    block.text = {
+      elements: [
+        {
+          text_run: {
+            content: text,
+          },
+        },
+      ],
+    };
+  }
+
+  /**
+   * removeBlockFromState method 从本地 block 状态中移除块.
+   */
+  private removeBlockFromState(
+    blocks: DocumentBlockRecord[],
+    parentId: string,
+    blockId: string,
+  ): void {
+    const blockIndex = blocks.findIndex((block) => block.block_id === blockId);
+    if (blockIndex >= 0) {
+      blocks.splice(blockIndex, 1);
+    }
+
+    const parentBlock = blocks.find((block) => block.block_id === parentId);
+    if (!parentBlock?.children) {
+      return;
+    }
+
+    parentBlock.children = parentBlock.children.filter((child) => child !== blockId);
+  }
+
+  /**
+   * removeCreatedChildrenFromState method 从本地状态中移除一批新建子块.
+   */
+  private removeCreatedChildrenFromState(
+    blocks: DocumentBlockRecord[],
+    parentId: string,
+    blockIds: string[],
+  ): void {
+    const blockIdSet = new Set(blockIds);
+
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      if (blockIdSet.has(blocks[index]!.block_id)) {
+        blocks.splice(index, 1);
+      }
+    }
+
+    const parentBlock = blocks.find((block) => block.block_id === parentId);
+    if (!parentBlock?.children) {
+      return;
+    }
+
+    parentBlock.children = parentBlock.children.filter(
+      (child) => !blockIdSet.has(child),
+    );
+  }
+
+  /**
+   * resolveSiblingIndex method 获取目标块在父块中的子序号.
+   */
+  private resolveSiblingIndex(
+    blocks: DocumentBlockRecord[],
+    targetBlock: DocumentBlockRecord,
+    parentId: string,
+  ): number {
+    const parentBlock = blocks.find((block) => block.block_id === parentId);
+    if (parentBlock?.children?.length) {
+      const index = parentBlock.children.indexOf(targetBlock.block_id);
+      if (index >= 0) {
+        return index;
+      }
+    }
+
+    return blocks
+      .filter((block) => block.parent_id === parentId)
+      .findIndex((block) => block.block_id === targetBlock.block_id);
+  }
+
+  /**
+   * extractTextContentForPatch method 提取用于占位符匹配的原始文本.
+   */
+  private extractTextContentForPatch(block: DocumentBlockRecord): string {
+    const textKeys = [
+      'text',
+      'heading1',
+      'heading2',
+      'heading3',
+      'bullet',
+      'ordered',
+      'code',
+      'quote',
+      'page',
+    ] as const;
+
+    for (const key of textKeys) {
+      const value = block[key];
+      if (value && typeof value === 'object') {
+        const elements = (value as { elements?: Array<{ text_run?: { content?: string } }> })
+          .elements;
+        const text = this.extractTextFromElements(elements);
+        if (text) {
+          return text;
+        }
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * updateTextBlock method 更新文本块文本内容.
+   */
+  private async updateTextBlock(
+    accessToken: string,
+    documentId: string,
+    blockId: string,
+    text: string,
+  ): Promise<void> {
+    const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks/${blockId}`;
+    const response = await this.requestWithAuth<FeishuApiResponse>(
+      url,
+      accessToken,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          update_text_elements: {
+            elements: [
+              {
+                text_run: {
+                  content: text,
+                },
+              },
+            ],
+          },
+        }),
+      },
+    );
+
+    if (response.code !== 0) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `更新文本块失败: ${response.msg || '未知错误'}`,
+      );
+    }
+  }
+
+  /**
+   * createBlocksAfterIndex method 创建一批子块.
+   */
+  private async createBlocksAfterIndex(
+    accessToken: string,
+    documentId: string,
+    parentId: string,
+    index: number,
+    children: Array<Record<string, unknown>>,
+  ): Promise<DocumentBlockRecord[]> {
+    const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks/${parentId}/children`;
+    const response = await this.requestWithAuth<
+      FeishuApiResponse<{ children?: DocumentBlockRecord[] }>
+    >(
+      url,
+      accessToken,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          index,
+          children,
+        }),
+      },
+    );
+
+    if (response.code !== 0) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `创建文档块失败: ${response.msg || '未知错误'}`,
+      );
+    }
+
+    return response.data?.children ?? [];
+  }
+
+  /**
+   * resolveCreatedMediaBlockId method 从创建块响应中解析真实媒体块 ID.
+   */
+  private resolveCreatedMediaBlockId(
+    createdBlock: DocumentBlockRecord | undefined,
+    patch: FeishuDocumentMediaPatch,
+  ): string {
+    if (!createdBlock) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        '创建媒体块成功但未返回块信息',
+      );
+    }
+
+    if (patch.type === 'image') {
+      return createdBlock.block_id;
+    }
+
+    const fileBlockId = createdBlock.children?.find(
+      (child): child is string => typeof child === 'string' && child.length > 0,
+    );
+    if (fileBlockId) {
+      return fileBlockId;
+    }
+
+    if (createdBlock.block_type === 23) {
+      return createdBlock.block_id;
+    }
+
+    throw new McpError(
+      JsonRpcErrorCode.InternalError,
+      '创建附件块成功但未返回 file block ID',
+    );
+  }
+
+  /**
+   * replaceMediaBlockToken method 将已上传媒体 token 写回文档块.
+   */
+  private async replaceMediaBlockToken(
+    accessToken: string,
+    documentId: string,
+    blockId: string,
+    type: 'image' | 'file',
+    fileToken: string,
+  ): Promise<void> {
+    const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks/${blockId}`;
+    const response = await this.requestWithAuth<FeishuApiResponse>(
+      url,
+      accessToken,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          type === 'image'
+            ? {
+                replace_image: {
+                  token: fileToken,
+                },
+              }
+            : {
+                replace_file: {
+                  token: fileToken,
+                },
+              },
+        ),
+      },
+    );
+
+    if (response.code !== 0) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `更新媒体块失败: ${response.msg || '未知错误'}`,
+      );
+    }
+  }
+
+  /**
+   * deleteChildBlock method 删除父块下指定索引范围的子块.
+   */
+  private async deleteChildBlock(
+    accessToken: string,
+    documentId: string,
+    parentId: string,
+    startIndex: number,
+    endIndex: number,
+  ): Promise<void> {
+    const url = `${FEISHU_CONFIG.BASE_URL}/docx/v1/documents/${documentId}/blocks/${parentId}/children/batch_delete`;
+    const response = await this.requestWithAuth<FeishuApiResponse>(
+      url,
+      accessToken,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          start_index: startIndex,
+          end_index: endIndex,
+        }),
+      },
+    );
+
+    if (response.code !== 0) {
+      throw new McpError(
+        JsonRpcErrorCode.InternalError,
+        `删除文档块失败: ${response.msg || '未知错误'}`,
+      );
+    }
+  }
+
+  /**
+   * buildMediaChildBlock method 构造空图片或附件块请求体.
+   */
+  private buildMediaChildBlock(
+    patch: FeishuDocumentMediaPatch,
+  ): Record<string, unknown> {
+    if (patch.type === 'image') {
+      return {
+        block_type: 27,
+        image: {},
+      };
+    }
+
+    return {
+      block_type: 23,
+      file: {
+        token: '',
+      },
+    };
+  }
+
+  /**
+   * buildTextChildBlock method 构造普通文本块请求体.
+   */
+  private buildTextChildBlock(text: string): Record<string, unknown> {
+    return {
+      block_type: 2,
+      text: {
+        elements: [
+          {
+            text_run: {
+              content: text,
+            },
+          },
+        ],
+      },
+    };
   }
 
   /**

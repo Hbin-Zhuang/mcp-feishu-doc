@@ -185,7 +185,7 @@ export class MarkdownProcessorProvider implements IMarkdownProcessor {
     result = this.processBlockReferences(result);
     result = this.processEmbeds(result, baseDirectory, config);
     result = this.processImages(result, baseDirectory, config);
-    result = this.processLinks(result);
+    result = this.processLinks(result, config);
     result = this.processTags(result);
     // 扩展语法支持 (T702, T703, T704)
     result = this.processHighlights(result);
@@ -390,20 +390,28 @@ export class MarkdownProcessorProvider implements IMarkdownProcessor {
       const alt = String(match[1] ?? '');
       const src = String(match[2] ?? '');
 
-      if (src.startsWith('http://') || src.startsWith('https://')) {
-        continue;
-      }
-
       let replacement: string;
-      if (config?.processImages !== false) {
+      const isRemoteImage =
+        src.startsWith('http://') || src.startsWith('https://');
+
+      if (
+        config?.processImages !== false &&
+        (!isRemoteImage || config?.downloadRemoteImages)
+      ) {
         const placeholder = this.generatePlaceholder();
-        const resolvedPath = this.resolvePath(src, baseDirectory);
+        const resolvedPath = isRemoteImage
+          ? src
+          : this.resolvePath(src, baseDirectory);
         this.localFiles.push({
           originalPath: resolvedPath,
-          fileName: this.extractFileName(src),
+          fileName: isRemoteImage
+            ? this.extractRemoteFileName(src)
+            : this.extractFileName(src),
           placeholder,
           isImage: true,
           altText: alt || '图片',
+          sourceType: isRemoteImage ? 'remote' : 'local',
+          ...(isRemoteImage ? { remoteUrl: src } : {}),
         });
         replacement = placeholder;
       } else {
@@ -420,7 +428,7 @@ export class MarkdownProcessorProvider implements IMarkdownProcessor {
     return this.applyReplacements(content, replacements);
   }
 
-  private processLinks(content: string): string {
+  private processLinks(content: string, config?: ProcessConfig): string {
     // 重置正则状态
     LINK_REGEX.lastIndex = 0;
     const replacements: Replacement[] = [];
@@ -430,6 +438,35 @@ export class MarkdownProcessorProvider implements IMarkdownProcessor {
       const fullMatch = match[0];
       const text = String(match[1] ?? '');
       const url = String(match[2] ?? '');
+
+      const remoteFileName = this.extractRemoteFileName(url);
+      const isRemoteUrl =
+        url.startsWith('http://') || url.startsWith('https://');
+      const shouldDownloadRemoteAttachment =
+        isRemoteUrl &&
+        config?.processAttachments !== false &&
+        config?.downloadRemoteAttachments === true &&
+        this.isFileReference(remoteFileName) &&
+        !this.isImageFile(remoteFileName);
+
+      if (shouldDownloadRemoteAttachment) {
+        const placeholder = this.generatePlaceholder();
+        this.localFiles.push({
+          originalPath: url,
+          fileName: remoteFileName,
+          placeholder,
+          isImage: false,
+          altText: text || remoteFileName,
+          sourceType: 'remote',
+          remoteUrl: url,
+        });
+        replacements.push({
+          start: match.index,
+          end: match.index + fullMatch.length,
+          replacement: placeholder,
+        });
+        continue;
+      }
 
       if (url.startsWith('obsidian://')) {
         replacements.push({
@@ -697,6 +734,19 @@ export class MarkdownProcessorProvider implements IMarkdownProcessor {
 
   private extractFileName(filePath: string): string {
     return path.basename(filePath);
+  }
+
+  /**
+   * extractRemoteFileName method 从远程 URL 中推导文件名.
+   */
+  private extractRemoteFileName(urlString: string): string {
+    try {
+      const url = new URL(urlString);
+      const lastSegment = url.pathname.split('/').filter(Boolean).pop();
+      return lastSegment || 'remote-file';
+    } catch {
+      return 'remote-file';
+    }
   }
 
   private isFileReference(pathStr: string): boolean {

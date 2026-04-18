@@ -125,6 +125,40 @@ export type FeishuDocumentReadBlockType = 'text' | 'image' | 'file';
 export type FeishuDocumentAssetType = 'image' | 'file';
 
 /**
+ * FeishuDocumentAssetDeliveryMode type 文档媒体资产返回方式.
+ */
+export type FeishuDocumentAssetDeliveryMode =
+  | 'inline_base64'
+  | 'local_file_only';
+
+/**
+ * FeishuDocumentAssetStatus type 文档媒体资产处理状态.
+ */
+export type FeishuDocumentAssetStatus =
+  | 'downloaded'
+  | 'skipped_too_large'
+  | 'skipped_over_limit';
+
+/**
+ * MediaUploadFailureStatus type 媒体上传失败状态.
+ */
+export type MediaUploadFailureStatus =
+  | 'upload_failed'
+  | 'file_missing'
+  | 'skipped_too_large'
+  | 'skipped_over_limit';
+
+/**
+ * LocalFileSourceType type 本地文件来源类型.
+ */
+export type LocalFileSourceType = 'local' | 'remote';
+
+/**
+ * FeishuDocumentMediaPatchType type 上传后需要回填到正文中的媒体类型.
+ */
+export type FeishuDocumentMediaPatchType = 'image' | 'file';
+
+/**
  * FeishuDocumentReadBlock interface 文档读取后的顺序块.
  */
 export interface FeishuDocumentReadBlock {
@@ -160,6 +194,38 @@ export interface FeishuDocumentAsset {
   base64Data?: string;
   /** 附件文本预览 */
   previewText?: string;
+  /** 媒体返回方式 */
+  deliveryMode?: FeishuDocumentAssetDeliveryMode;
+  /** 媒体处理状态 */
+  status?: FeishuDocumentAssetStatus;
+  /** 状态原因 */
+  reason?: string;
+}
+
+/**
+ * FeishuDocumentMediaPatch interface 上传后用于回填正文的本地媒体映射.
+ */
+export interface FeishuDocumentMediaPatch {
+  /** 本地原始路径 */
+  originalPath: string;
+  /** 真实上传路径（远程资源下载后会指向临时文件） */
+  resolvedPath?: string;
+  /** 占位符文本 */
+  placeholder: string;
+  /** 媒体类型 */
+  type: FeishuDocumentMediaPatchType;
+  /** 文件名 */
+  fileName: string;
+}
+
+/**
+ * FeishuDocumentMediaPatchResult interface 文档媒体回填结果.
+ */
+export interface FeishuDocumentMediaPatchResult {
+  /** 成功上传并回填的媒体 */
+  uploadedFiles: UploadedFile[];
+  /** 媒体处理失败详情 */
+  mediaUploadFailures: MediaUploadFailure[];
 }
 
 /**
@@ -194,6 +260,10 @@ export interface LocalFileInfo {
   isSubDocument?: boolean;
   /** 替代文本 */
   altText?: string;
+  /** 文件来源类型 */
+  sourceType?: LocalFileSourceType;
+  /** 远程资源 URL（仅 remote 类型） */
+  remoteUrl?: string;
 }
 
 /**
@@ -320,6 +390,10 @@ export interface UploadConfig {
   parentNodeToken?: string;
   /** 是否上传图片 */
   uploadImages?: boolean;
+  /** 是否下载远程图片并转存到飞书 */
+  downloadRemoteImages?: boolean;
+  /** 是否下载远程附件并转存到飞书 */
+  downloadRemoteAttachments?: boolean;
   /** 是否上传附件 */
   uploadAttachments?: boolean;
   /** 是否移除 Front Matter */
@@ -346,6 +420,8 @@ export interface UploadResult {
   title?: string;
   /** 上传的文件列表 */
   uploadedFiles?: UploadedFile[];
+  /** 媒体上传失败列表 */
+  mediaUploadFailures?: MediaUploadFailure[];
   /** 错误信息 */
   error?: string;
   /** 是否检测到冲突 */
@@ -364,6 +440,22 @@ export interface UploadedFile {
   fileKey: string;
   /** 是否为图片 */
   isImage: boolean;
+}
+
+/**
+ * MediaUploadFailure interface 媒体上传失败详情.
+ */
+export interface MediaUploadFailure {
+  /** 原始路径 */
+  originalPath: string;
+  /** 文件名 */
+  fileName: string;
+  /** 是否为图片 */
+  isImage: boolean;
+  /** 失败原因 */
+  error: string;
+  /** 失败状态 */
+  status?: MediaUploadFailureStatus;
 }
 
 // ============================================================================

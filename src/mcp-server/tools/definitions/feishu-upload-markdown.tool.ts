@@ -108,6 +108,14 @@ const InputSchema = z
       .boolean()
       .default(true)
       .describe('是否上传本地图片到飞书。'),
+    downloadRemoteImages: z
+      .boolean()
+      .default(false)
+      .describe('是否下载 Markdown 中的远程图片并转存到飞书。'),
+    downloadRemoteAttachments: z
+      .boolean()
+      .default(false)
+      .describe('是否下载 Markdown 中的远程附件链接并转存到飞书。'),
     uploadAttachments: z
       .boolean()
       .default(true)
@@ -142,6 +150,26 @@ const OutputSchema = z
       )
       .optional()
       .describe('已上传的本地文件列表。'),
+    mediaUploadFailures: z
+      .array(
+        z.object({
+          originalPath: z.string().describe('原始文件路径。'),
+          fileName: z.string().describe('文件名。'),
+          isImage: z.boolean().describe('是否为图片。'),
+          error: z.string().describe('失败原因。'),
+          status: z
+            .enum([
+              'upload_failed',
+              'file_missing',
+              'skipped_too_large',
+              'skipped_over_limit',
+            ])
+            .optional()
+            .describe('失败状态。'),
+        }),
+      )
+      .optional()
+      .describe('上传失败的本地媒体文件列表。'),
     error: z.string().optional().describe('错误信息。'),
   })
   .describe('Markdown 文档上传结果。');
@@ -222,6 +250,8 @@ async function uploadLogic(
       ...(input.targetId ? { targetId: input.targetId } : {}),
       ...(input.parentNodeToken ? { parentNodeToken: input.parentNodeToken } : {}),
       uploadImages: input.uploadImages,
+      downloadRemoteImages: input.downloadRemoteImages,
+      downloadRemoteAttachments: input.downloadRemoteAttachments,
       uploadAttachments: input.uploadAttachments,
       removeFrontMatter: input.removeFrontMatter,
     },
@@ -246,6 +276,7 @@ async function uploadLogic(
     url: result.url,
     title: result.title,
     uploadedFiles: result.uploadedFiles,
+    mediaUploadFailures: result.mediaUploadFailures,
     error: result.error,
   };
 }
@@ -285,6 +316,14 @@ function responseFormatter(result: UploadOutput): ContentBlock[] {
         for (const att of attachments) {
           md.text(`  - ${att.fileName}`);
         }
+      }
+    }
+
+    if (result.mediaUploadFailures && result.mediaUploadFailures.length > 0) {
+      md.blankLine().h3('未成功上传的媒体');
+      for (const failure of result.mediaUploadFailures) {
+        const kind = failure.isImage ? '图片' : '附件';
+        md.text(`  - ${kind} ${failure.fileName}: ${failure.error}`);
       }
     }
 

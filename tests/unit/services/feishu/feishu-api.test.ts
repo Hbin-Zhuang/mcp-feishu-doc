@@ -4,10 +4,12 @@
  * @module tests/unit/services/feishu/feishu-api.test
  */
 
-import { existsSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FeishuApiProvider } from '@/services/feishu/providers/feishu-api.provider.js';
+import { DOC_MEDIA_READ_LIMITS } from '@/services/feishu/constants.js';
 
 // Mock fetch
 const mockFetch = vi.fn();
@@ -18,7 +20,7 @@ describe('飞书 API 提供者', () => {
 
   beforeEach(() => {
     provider = new FeishuApiProvider();
-    mockFetch.mockClear();
+    mockFetch.mockReset();
   });
 
   describe('generateAuthUrl', () => {
@@ -260,6 +262,7 @@ describe('飞书 API 提供者', () => {
         buffer,
         'test.txt',
         'file',
+        'doc_123',
       );
 
       expect(result).toBe('file_token_123');
@@ -269,10 +272,17 @@ describe('飞书 API 提供者', () => {
           method: 'POST',
           headers: expect.objectContaining({
             Authorization: 'Bearer test_access_token',
-            'Content-Type': expect.stringContaining('multipart/form-data'),
           }),
         }),
       );
+      const requestOptions = mockFetch.mock.calls[0]?.[1];
+      expect(requestOptions?.body).toBeInstanceOf(FormData);
+      const body = requestOptions?.body as FormData;
+      expect(body.get('parent_node')).toBe('doc_123');
+      expect(body.get('parent_type')).toBe('docx_file');
+      expect(body.get('file_name')).toBe('test.txt');
+      expect(body.get('size')).toBe(String(buffer.byteLength));
+      expect(body.get('file')).toBeInstanceOf(Blob);
     });
 
     it('应该处理上传失败', async () => {
@@ -292,6 +302,7 @@ describe('飞书 API 提供者', () => {
           buffer,
           'large.txt',
           'file',
+          'doc_123',
         ),
       ).rejects.toThrow('文件大小超出限制');
     });
@@ -512,7 +523,7 @@ describe('飞书 API 提供者', () => {
                       block_type: 27,
                       parent_id: 'page_1',
                       image: {
-                        file_token: 'img_token_1',
+                        token: 'img_token_1',
                       },
                     },
                     {
@@ -528,7 +539,7 @@ describe('飞书 API 提供者', () => {
                       block_type: 23,
                       parent_id: 'page_1',
                       file: {
-                        file_token: 'file_token_1',
+                        token: 'file_token_1',
                       },
                     },
                     {
@@ -629,6 +640,1146 @@ describe('飞书 API 提供者', () => {
         expect(existsSync(imageAsset.localPath)).toBe(true);
         rmSync(dirname(imageAsset.localPath), { recursive: true, force: true });
       }
+    });
+
+    it('图片超过内联限制时应该降级为本地文件模式', async () => {
+      const oversizedImage = new Uint8Array(3_000_000).fill(1);
+
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  document: {
+                    document_id: 'doc_oversized',
+                    revision_id: 8,
+                    title: '超大图片文档',
+                  },
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  items: [
+                    {
+                      block_id: 'page_1',
+                      block_type: 1,
+                      parent_id: '',
+                      page: {
+                        elements: [{ text_run: { content: '超大图片文档' } }],
+                      },
+                    },
+                    {
+                      block_id: 'image_1',
+                      block_type: 27,
+                      parent_id: 'page_1',
+                      image: {
+                        token: 'img_token_oversized',
+                      },
+                    },
+                  ],
+                  has_more: false,
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  tmp_download_urls: [
+                    {
+                      file_token: 'img_token_oversized',
+                      tmp_download_url: 'https://cdn.example.com/oversized-image',
+                    },
+                  ],
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: () => Promise.resolve(oversizedImage.buffer),
+          headers: new Headers({
+            'content-type': 'image/png',
+            'content-disposition': 'inline; filename="oversized.png"',
+          }),
+        });
+
+      const result = await provider.getDocumentContent(
+        'test_access_token',
+        'doc_oversized',
+      );
+
+      const imageAsset = result.assets.find(
+        (asset) =>
+          asset.type === 'image' && asset.fileToken === 'img_token_oversized',
+      );
+
+      expect(imageAsset).toMatchObject({
+        fileName: 'oversized.png',
+        mimeType: 'image/png',
+        byteLength: 3_000_000,
+        deliveryMode: 'local_file_only',
+        status: 'skipped_too_large',
+        reason: '图片超过单张内联大小限制',
+      });
+      expect(imageAsset?.base64Data).toBeUndefined();
+      expect(imageAsset?.localPath).toBeDefined();
+
+      if (imageAsset?.localPath) {
+        expect(existsSync(imageAsset.localPath)).toBe(true);
+        rmSync(dirname(imageAsset.localPath), { recursive: true, force: true });
+      }
+    });
+
+    it('拉取文档图片资源时应该使用有限并发下载', async () => {
+      const imageTokens = Array.from(
+        { length: DOC_MEDIA_READ_LIMITS.downloadConcurrency + 2 },
+        (_, index) => `img_token_concurrent_${index}`,
+      );
+      let activeDownloads = 0;
+      let maxActiveDownloads = 0;
+
+      mockFetch.mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+
+        if (url.includes('/blocks?')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    items: [
+                      {
+                        block_id: 'page_1',
+                        block_type: 1,
+                        parent_id: '',
+                        page: {
+                          elements: [{ text_run: { content: '并发图片文档' } }],
+                        },
+                      },
+                      ...imageTokens.map((fileToken, index) => ({
+                        block_id: `image_${index}`,
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: { token: fileToken },
+                      })),
+                    ],
+                    has_more: false,
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.endsWith('/documents/doc_concurrent')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    document: {
+                      document_id: 'doc_concurrent',
+                      revision_id: 13,
+                      title: '并发图片文档',
+                    },
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/batch_get_tmp_download_url')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    tmp_download_urls: imageTokens.map((fileToken) => ({
+                      file_token: fileToken,
+                      tmp_download_url: `https://cdn.example.com/${fileToken}`,
+                    })),
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('https://cdn.example.com/')) {
+          activeDownloads += 1;
+          maxActiveDownloads = Math.max(maxActiveDownloads, activeDownloads);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          activeDownloads -= 1;
+
+          return {
+            ok: true,
+            arrayBuffer: () =>
+              Promise.resolve(new Uint8Array([137, 80, 78, 71]).buffer),
+            headers: new Headers({
+              'content-type': 'image/png',
+              'content-disposition': `inline; filename="${url.split('/').pop()}.png"`,
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected fetch url: ${url}`);
+      });
+
+      const result = await provider.getDocumentContent(
+        'test_access_token',
+        'doc_concurrent',
+      );
+
+      expect(result.assets).toHaveLength(imageTokens.length);
+      expect(maxActiveDownloads).toBeGreaterThan(1);
+      expect(maxActiveDownloads).toBeLessThanOrEqual(
+        DOC_MEDIA_READ_LIMITS.downloadConcurrency,
+      );
+
+      result.assets.forEach((asset) => {
+        if (asset.localPath) {
+          rmSync(dirname(asset.localPath), { recursive: true, force: true });
+        }
+      });
+    });
+  });
+
+  describe('batchGetTmpDownloadUrls', () => {
+    it('应该按批次请求临时下载链接', async () => {
+      const tokens = Array.from({ length: 21 }, (_, index) => `file_token_${index}`);
+
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  tmp_download_urls: tokens.slice(0, 20).map((fileToken) => ({
+                    file_token: fileToken,
+                    tmp_download_url: `https://cdn.example.com/${fileToken}`,
+                  })),
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  tmp_download_urls: [
+                    {
+                      file_token: tokens[20],
+                      tmp_download_url: `https://cdn.example.com/${tokens[20]}`,
+                    },
+                  ],
+                },
+              }),
+            ),
+        });
+
+      const result = await (provider as unknown as {
+        batchGetTmpDownloadUrls: (
+          accessToken: string,
+          fileTokens: string[],
+        ) => Promise<Map<string, string>>;
+      }).batchGetTmpDownloadUrls('test_access_token', tokens);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(21);
+      expect(result.get('file_token_0')).toBe(
+        'https://cdn.example.com/file_token_0',
+      );
+      expect(result.get('file_token_20')).toBe(
+        'https://cdn.example.com/file_token_20',
+      );
+    });
+  });
+
+  describe('replaceDocumentPlaceholdersWithMedia', () => {
+    it('应该创建空图片块、上传素材到图片块并替换 token', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'feishu-image-'));
+      const imagePath = join(tempDir, 'diagram.png');
+      writeFileSync(imagePath, Buffer.from([137, 80, 78, 71]));
+
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  items: [
+                    {
+                      block_id: 'page_1',
+                      block_type: 1,
+                      parent_id: '',
+                      children: ['text_1'],
+                    },
+                    {
+                      block_id: 'text_1',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                      text: {
+                        elements: [
+                          {
+                            text_run: {
+                              content: '前文 __IMG_PLACEHOLDER__ 后文',
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                  has_more: false,
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  children: [
+                    {
+                      block_id: 'image_block_1',
+                      block_type: 27,
+                      parent_id: 'page_1',
+                      image: {
+                        token: '',
+                        height: 100,
+                        width: 100,
+                      },
+                    },
+                    {
+                      block_id: 'text_2',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                    },
+                  ],
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  file_token: 'img_token_1',
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+        })
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  children: [
+                    {
+                      block_id: 'text_2',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                    },
+                  ],
+                },
+              }),
+            ),
+        });
+
+      const result = await provider.replaceDocumentPlaceholdersWithMedia(
+        'test_access_token',
+        'doc_123',
+        [
+          {
+            placeholder: '__IMG_PLACEHOLDER__',
+            originalPath: imagePath,
+            type: 'image',
+            fileName: 'diagram.png',
+          },
+        ],
+      );
+
+      expect(result).toEqual({
+        uploadedFiles: [
+          {
+            originalPath: imagePath,
+            fileName: 'diagram.png',
+            fileKey: 'img_token_1',
+            isImage: true,
+          },
+        ],
+        mediaUploadFailures: [],
+      });
+      const createCall = mockFetch.mock.calls[1];
+      expect(createCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/page_1/children',
+      );
+      const createBody = JSON.parse(createCall?.[1]?.body as string) as {
+        children: Array<Record<string, unknown>>;
+      };
+      expect(createBody.children[0]).toEqual({
+        block_type: 27,
+        image: {},
+      });
+
+      const uploadCall = mockFetch.mock.calls[2];
+      expect(uploadCall?.[0]).toContain('/drive/v1/medias/upload_all');
+      const uploadBody = uploadCall?.[1]?.body as FormData;
+      expect(uploadBody.get('parent_type')).toBe('docx_image');
+      expect(uploadBody.get('parent_node')).toBe('image_block_1');
+      expect(uploadBody.get('file_name')).toBe('diagram.png');
+      expect(uploadBody.get('size')).toBe('4');
+
+      const replaceCall = mockFetch.mock.calls[3];
+      expect(replaceCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/image_block_1',
+      );
+      expect(JSON.parse(replaceCall?.[1]?.body as string)).toEqual({
+        replace_image: {
+          token: 'img_token_1',
+        },
+      });
+
+      const updateTextCall = mockFetch.mock.calls[4];
+      expect(updateTextCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/text_1',
+      );
+      expect(JSON.parse(updateTextCall?.[1]?.body as string)).toEqual({
+        update_text_elements: {
+          elements: [
+            {
+              text_run: {
+                content: '前文',
+              },
+            },
+          ],
+        },
+      });
+
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('应该兼容导入后丢失首尾下划线的占位符，并按 file block 协议上传附件', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'feishu-file-'));
+      const filePath = join(tempDir, 'data.csv');
+      writeFileSync(filePath, 'alpha,beta\n1,2', 'utf8');
+
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  items: [
+                    {
+                      block_id: 'page_1',
+                      block_type: 1,
+                      parent_id: '',
+                      children: ['text_1'],
+                    },
+                    {
+                      block_id: 'text_1',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                      text: {
+                        elements: [
+                          {
+                            text_run: {
+                              content: '前文 MCP_CONTENT_12345_abcd 后文',
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                  has_more: false,
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  children: [
+                    {
+                      block_id: 'view_block_1',
+                      block_type: 33,
+                      parent_id: 'page_1',
+                      children: ['file_block_1'],
+                      view: {
+                        view_type: 1,
+                      },
+                    },
+                    {
+                      block_id: 'text_2',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                    },
+                  ],
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  file_token: 'file_token_1',
+                },
+              }),
+            ),
+        })
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+        })
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+        })
+        .mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  children: [
+                    {
+                      block_id: 'text_2',
+                      block_type: 2,
+                      parent_id: 'page_1',
+                    },
+                  ],
+                },
+              }),
+            ),
+        });
+
+      const result = await provider.replaceDocumentPlaceholdersWithMedia(
+        'test_access_token',
+        'doc_123',
+        [
+          {
+            placeholder: '__MCP_CONTENT_12345_abcd__',
+            originalPath: filePath,
+            type: 'file',
+            fileName: 'data.csv',
+          },
+        ],
+      );
+
+      expect(result).toEqual({
+        uploadedFiles: [
+          {
+            originalPath: filePath,
+            fileName: 'data.csv',
+            fileKey: 'file_token_1',
+            isImage: false,
+          },
+        ],
+        mediaUploadFailures: [],
+      });
+
+      const createCall = mockFetch.mock.calls[1];
+      expect(createCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/page_1/children',
+      );
+      const createBody = JSON.parse(createCall?.[1]?.body as string) as {
+        children: Array<Record<string, unknown>>;
+      };
+      expect(createBody.children[0]).toEqual({
+        block_type: 23,
+        file: {
+          token: '',
+        },
+      });
+
+      const uploadCall = mockFetch.mock.calls[2];
+      expect(uploadCall?.[0]).toContain('/drive/v1/medias/upload_all');
+      const uploadBody = uploadCall?.[1]?.body as FormData;
+      expect(uploadBody.get('parent_type')).toBe('docx_file');
+      expect(uploadBody.get('parent_node')).toBe('file_block_1');
+      expect(uploadBody.get('file_name')).toBe('data.csv');
+      expect(uploadBody.get('size')).toBe(String(Buffer.byteLength('alpha,beta\n1,2')));
+
+      const replaceCall = mockFetch.mock.calls[3];
+      expect(replaceCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/file_block_1',
+      );
+      expect(JSON.parse(replaceCall?.[1]?.body as string)).toEqual({
+        replace_file: {
+          token: 'file_token_1',
+        },
+      });
+
+      const updateTextCall = mockFetch.mock.calls[4];
+      expect(updateTextCall?.[0]).toContain(
+        '/docx/v1/documents/doc_123/blocks/text_1',
+      );
+      expect(JSON.parse(updateTextCall?.[1]?.body as string)).toEqual({
+        update_text_elements: {
+          elements: [
+            {
+              text_run: {
+                content: '前文',
+              },
+            },
+          ],
+        },
+      });
+
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('多媒体回填时应该只拉取一次文档 blocks', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'feishu-multi-patch-'));
+      const imagePath1 = join(tempDir, 'diagram-1.png');
+      const imagePath2 = join(tempDir, 'diagram-2.png');
+      writeFileSync(imagePath1, Buffer.from([137, 80, 78, 71, 1]));
+      writeFileSync(imagePath2, Buffer.from([137, 80, 78, 71, 2]));
+
+      let createCallCount = 0;
+      let uploadCallCount = 0;
+
+      mockFetch.mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+
+        if (url.includes('/blocks?')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    items: [
+                      {
+                        block_id: 'page_1',
+                        block_type: 1,
+                        parent_id: '',
+                        children: ['text_1', 'text_2'],
+                      },
+                      {
+                        block_id: 'text_1',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                        text: {
+                          elements: [
+                            {
+                              text_run: {
+                                content: '图一 __IMG_PLACEHOLDER_1__ 结束',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        block_id: 'text_2',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                        text: {
+                          elements: [
+                            {
+                              text_run: {
+                                content: '图二 __IMG_PLACEHOLDER_2__ 完成',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                    has_more: false,
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/blocks/page_1/children')) {
+          createCallCount += 1;
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    children: [
+                      {
+                        block_id: `image_block_${createCallCount}`,
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: {
+                          token: '',
+                          height: 100,
+                          width: 100,
+                        },
+                      },
+                    ],
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/drive/v1/medias/upload_all')) {
+          uploadCallCount += 1;
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    file_token: `img_token_${uploadCallCount}`,
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/blocks/image_block_')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        if (url.includes('/blocks/text_')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        throw new Error(`Unexpected fetch url: ${url}`);
+      });
+
+      const result = await provider.replaceDocumentPlaceholdersWithMedia(
+        'test_access_token',
+        'doc_123',
+        [
+          {
+            placeholder: '__IMG_PLACEHOLDER_1__',
+            originalPath: imagePath1,
+            type: 'image',
+            fileName: 'diagram-1.png',
+          },
+          {
+            placeholder: '__IMG_PLACEHOLDER_2__',
+            originalPath: imagePath2,
+            type: 'image',
+            fileName: 'diagram-2.png',
+          },
+        ],
+      );
+
+      expect(result.uploadedFiles).toEqual([
+        {
+          originalPath: imagePath1,
+          fileName: 'diagram-1.png',
+          fileKey: 'img_token_1',
+          isImage: true,
+        },
+        {
+          originalPath: imagePath2,
+          fileName: 'diagram-2.png',
+          fileKey: 'img_token_2',
+          isImage: true,
+        },
+      ]);
+      expect(result.mediaUploadFailures).toEqual([]);
+
+      const blockFetchCalls = mockFetch.mock.calls.filter((call) =>
+        String(call[0]).includes('/blocks?'),
+      );
+      expect(blockFetchCalls).toHaveLength(1);
+
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('同一文本块内多个占位符应在一次 children 创建中完成回填', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'feishu-grouped-patch-'));
+      const imagePath1 = join(tempDir, 'diagram-a.png');
+      const imagePath2 = join(tempDir, 'diagram-b.png');
+      writeFileSync(imagePath1, Buffer.from([137, 80, 78, 71, 11]));
+      writeFileSync(imagePath2, Buffer.from([137, 80, 78, 71, 12]));
+
+      mockFetch.mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+
+        if (url.includes('/blocks?')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    items: [
+                      {
+                        block_id: 'page_1',
+                        block_type: 1,
+                        parent_id: '',
+                        children: ['text_1'],
+                      },
+                      {
+                        block_id: 'text_1',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                        text: {
+                          elements: [
+                            {
+                              text_run: {
+                                content:
+                                  '开头 __IMG_PLACEHOLDER_1__ 中间 __IMG_PLACEHOLDER_2__ 结尾',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                    has_more: false,
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/blocks/page_1/children')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    children: [
+                      {
+                        block_id: 'image_block_1',
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: { token: '', height: 100, width: 100 },
+                      },
+                      {
+                        block_id: 'text_middle',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                      },
+                      {
+                        block_id: 'image_block_2',
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: { token: '', height: 100, width: 100 },
+                      },
+                      {
+                        block_id: 'text_tail',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                      },
+                    ],
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/drive/v1/medias/upload_all')) {
+          const body = mockFetch.mock.calls.at(-1)?.[1]?.body as FormData;
+          const parentNode = body.get('parent_node');
+          const token = parentNode === 'image_block_1' ? 'img_token_a' : 'img_token_b';
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: { file_token: token },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/blocks/image_block_')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        if (url.includes('/blocks/text_1')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        throw new Error(`Unexpected fetch url: ${url}`);
+      });
+
+      const result = await provider.replaceDocumentPlaceholdersWithMedia(
+        'test_access_token',
+        'doc_123',
+        [
+          {
+            placeholder: '__IMG_PLACEHOLDER_1__',
+            originalPath: imagePath1,
+            type: 'image',
+            fileName: 'diagram-a.png',
+          },
+          {
+            placeholder: '__IMG_PLACEHOLDER_2__',
+            originalPath: imagePath2,
+            type: 'image',
+            fileName: 'diagram-b.png',
+          },
+        ],
+      );
+
+      expect(result.uploadedFiles).toEqual([
+        {
+          originalPath: imagePath1,
+          fileName: 'diagram-a.png',
+          fileKey: 'img_token_a',
+          isImage: true,
+        },
+        {
+          originalPath: imagePath2,
+          fileName: 'diagram-b.png',
+          fileKey: 'img_token_b',
+          isImage: true,
+        },
+      ]);
+      expect(result.mediaUploadFailures).toEqual([]);
+
+      const createCalls = mockFetch.mock.calls.filter((call) =>
+        String(call[0]).includes('/blocks/page_1/children'),
+      );
+      expect(createCalls).toHaveLength(1);
+      const createBody = JSON.parse(createCalls[0]?.[1]?.body as string) as {
+        children: Array<Record<string, unknown>>;
+      };
+      expect(createBody.children).toEqual([
+        { block_type: 27, image: {} },
+        {
+          block_type: 2,
+          text: {
+            elements: [{ text_run: { content: '中间' } }],
+          },
+        },
+        { block_type: 27, image: {} },
+        {
+          block_type: 2,
+          text: {
+            elements: [{ text_run: { content: '结尾' } }],
+          },
+        },
+      ]);
+
+      const updateCalls = mockFetch.mock.calls.filter((call) =>
+        String(call[0]).includes('/blocks/text_1'),
+      );
+      expect(updateCalls).toHaveLength(1);
+      expect(JSON.parse(updateCalls[0]?.[1]?.body as string)).toEqual({
+        update_text_elements: {
+          elements: [
+            {
+              text_run: {
+                content: '开头',
+              },
+            },
+          ],
+        },
+      });
+
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('分组回填中途失败时应清理本次新建的 children', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'feishu-grouped-cleanup-'));
+      const imagePath1 = join(tempDir, 'diagram-cleanup-a.png');
+      const imagePath2 = join(tempDir, 'diagram-cleanup-b.png');
+      writeFileSync(imagePath1, Buffer.from([137, 80, 78, 71, 21]));
+      writeFileSync(imagePath2, Buffer.from([137, 80, 78, 71, 22]));
+
+      mockFetch.mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+
+        if (url.includes('/blocks?')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    items: [
+                      {
+                        block_id: 'page_1',
+                        block_type: 1,
+                        parent_id: '',
+                        children: ['text_1'],
+                      },
+                      {
+                        block_id: 'text_1',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                        text: {
+                          elements: [
+                            {
+                              text_run: {
+                                content:
+                                  '开头 __IMG_PLACEHOLDER_1__ 中间 __IMG_PLACEHOLDER_2__ 结尾',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                    has_more: false,
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/blocks/page_1/children/batch_delete')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        if (url.includes('/blocks/page_1/children')) {
+          return {
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  code: 0,
+                  data: {
+                    children: [
+                      {
+                        block_id: 'image_block_cleanup_1',
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: { token: '', height: 100, width: 100 },
+                      },
+                      {
+                        block_id: 'text_cleanup_middle',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                      },
+                      {
+                        block_id: 'image_block_cleanup_2',
+                        block_type: 27,
+                        parent_id: 'page_1',
+                        image: { token: '', height: 100, width: 100 },
+                      },
+                      {
+                        block_id: 'text_cleanup_tail',
+                        block_type: 2,
+                        parent_id: 'page_1',
+                      },
+                    ],
+                  },
+                }),
+              ),
+          };
+        }
+
+        if (url.includes('/drive/v1/medias/upload_all')) {
+          const body = mockFetch.mock.calls.at(-1)?.[1]?.body as FormData;
+          const parentNode = body.get('parent_node');
+          if (parentNode === 'image_block_cleanup_1') {
+            return {
+              text: () =>
+                Promise.resolve(
+                  JSON.stringify({
+                    code: 0,
+                    data: { file_token: 'img_token_cleanup_a' },
+                  }),
+                ),
+            };
+          }
+
+          throw new Error('upload failed for second media');
+        }
+
+        if (url.includes('/blocks/image_block_cleanup_1')) {
+          return {
+            text: () => Promise.resolve(JSON.stringify({ code: 0, data: {} })),
+          };
+        }
+
+        throw new Error(`Unexpected fetch url: ${url}`);
+      });
+
+      const result = await provider.replaceDocumentPlaceholdersWithMedia(
+        'test_access_token',
+        'doc_123',
+        [
+          {
+            placeholder: '__IMG_PLACEHOLDER_1__',
+            originalPath: imagePath1,
+            type: 'image',
+            fileName: 'diagram-cleanup-a.png',
+          },
+          {
+            placeholder: '__IMG_PLACEHOLDER_2__',
+            originalPath: imagePath2,
+            type: 'image',
+            fileName: 'diagram-cleanup-b.png',
+          },
+        ],
+      );
+
+      expect(result.uploadedFiles).toEqual([]);
+      expect(result.mediaUploadFailures).toEqual([
+        {
+          originalPath: imagePath1,
+          fileName: 'diagram-cleanup-a.png',
+          isImage: true,
+          error: '请求失败: Error: upload failed for second media',
+          status: 'upload_failed',
+        },
+        {
+          originalPath: imagePath2,
+          fileName: 'diagram-cleanup-b.png',
+          isImage: true,
+          error: '请求失败: Error: upload failed for second media',
+          status: 'upload_failed',
+        },
+      ]);
+
+      const cleanupCalls = mockFetch.mock.calls.filter((call) =>
+        String(call[0]).includes('/blocks/page_1/children/batch_delete'),
+      );
+      expect(cleanupCalls).toHaveLength(1);
+      expect(JSON.parse(cleanupCalls[0]?.[1]?.body as string)).toEqual({
+        start_index: 1,
+        end_index: 5,
+      });
+
+      rmSync(tempDir, { recursive: true, force: true });
     });
   });
 });

@@ -11,6 +11,8 @@ import { requestContextService } from '@/utils/index.js';
 import { config } from '@/config/index.js';
 import * as readline from 'readline';
 
+export const FEISHU_RUN_INTEGRATION_ENV = 'FEISHU_RUN_INTEGRATION';
+
 /**
  * 检查是否已有有效的认证
  */
@@ -162,6 +164,51 @@ export function createTestContext() {
 /**
  * 检查是否有飞书凭证配置
  */
-export const hasFeishuCredentials = !!(
-  config.feishu?.defaultAppId && config.feishu?.defaultAppSecret
-);
+export function hasConfiguredFeishuCredentials(): boolean {
+  return !!(config.feishu?.defaultAppId && config.feishu?.defaultAppSecret);
+}
+
+/**
+ * 检查是否显式开启飞书交互式集成测试
+ */
+export function isFeishuIntegrationEnabled(
+  envValue: string | undefined = process.env[FEISHU_RUN_INTEGRATION_ENV],
+): boolean {
+  return envValue === 'true';
+}
+
+/**
+ * 检查当前是否应该运行需要交互 OAuth 的飞书集成测试
+ */
+export function shouldRunFeishuIntegrationTests(
+  hasCredentials: boolean = hasConfiguredFeishuCredentials(),
+  envValue: string | undefined = process.env[FEISHU_RUN_INTEGRATION_ENV],
+): boolean {
+  return hasCredentials && isFeishuIntegrationEnabled(envValue);
+}
+
+/**
+ * 返回跳过飞书集成测试的原因；返回 null 表示可以执行
+ */
+export function getFeishuIntegrationSkipReason({
+  hasCredentials = hasConfiguredFeishuCredentials(),
+  isEnabled = isFeishuIntegrationEnabled(),
+}: {
+  hasCredentials?: boolean;
+  isEnabled?: boolean;
+} = {}): string | null {
+  if (!hasCredentials) {
+    return '缺少飞书凭证配置，请在 .env 文件中配置 FEISHU_DEFAULT_APP_ID 和 FEISHU_DEFAULT_APP_SECRET';
+  }
+
+  if (!isEnabled) {
+    return `默认禁用交互式飞书集成测试；如需运行，请设置 ${FEISHU_RUN_INTEGRATION_ENV}=true`;
+  }
+
+  return null;
+}
+
+/**
+ * 保持现有测试套件的导出名不变，同时要求显式开关开启后才会执行交互式集成测试
+ */
+export const hasFeishuCredentials = shouldRunFeishuIntegrationTests();

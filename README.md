@@ -1,330 +1,458 @@
 <div align="center">
   <h1>mcp-feishu-doc</h1>
-  <p><b>飞书（Lark）云文档与知识库管理的 MCP 服务器。支持 OAuth 授权、Markdown 上传/更新/删除、文档搜索、多应用配置，以及本地和边缘（Cloudflare Workers）运行。</b>
-  <div>15 个飞书工具</div>
-  </p>
+  <p><b>面向飞书云文档与知识库工作流的 MCP Server。</b></p>
+  <p>支持 OAuth、多应用配置、Markdown 上传/读取/更新/删除、知识库定位、本地图片与附件处理，以及本地与 Cloudflare Workers 运行。</p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.4-blue.svg?style=flat-square)](./CHANGELOG.md) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg?style=flat-square)](https://github.com/Hbin-Zhuang/mcp-feishu-doc/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/) [![Code Coverage](https://img.shields.io/badge/Coverage-76.12%25-brightgreen.svg?style=flat-square)](./coverage/index.html)
+[![Version](https://img.shields.io/badge/Version-2.6.4-blue.svg?style=flat-square)](./CHANGELOG.md)
+[![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx)
+[![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-^5.9.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/)
 
 </div>
 
 ---
 
-## ✨ 特性
+## 项目定位
 
-- **飞书云文档集成**：OAuth 2.0 认证、Markdown 上传/更新/删除、批量上传、文档搜索。
-- **知识库管理**：列出知识库空间、文件夹、知识库节点。
-- **多应用配置**：支持多个飞书应用、设置默认应用。
-- **抽象化存储**：支持 `in-memory`、`filesystem`、Supabase、SurrealDB 等后端。
-- **强大的错误处理**：统一的 `McpError` 系统确保一致的错误响应。
-- **全栈可观测性**：结构化日志（Pino）和可选的 OpenTelemetry。
-- **边缘就绪**：支持本地或 Cloudflare Workers 运行。
+`mcp-feishu-doc` 不是对飞书 OpenAPI 的简单直出，而是围绕“文档工作流”做的一层高阶封装。
 
-## 🏗️ 架构
+它重点解决这三件事：
 
-本项目遵循模块化、领域驱动的架构，具有清晰的关注点分离：
+- 把本地 Markdown 稳定上传到飞书云文档或知识库，而不是只暴露底层导入接口。
+- 读取文档时返回更适合 AI 消费的结构化结果，而不是只拿一段纯文本。
+- 让文档在上传后还能持续维护，包括位置记忆、冲突检测、更新重建和多应用管理。
 
+---
+
+## 核心亮点
+
+- 文档上传工作流完整：支持 `filePath` 或 `content`，支持上传到 `drive` 或 `wiki`，支持 `targetId` 和 `parentNodeToken`。
+- Markdown 处理更强：支持 Front Matter、callout、wiki link、代码块过滤、任务列表、高亮、删除线等语法转换。
+- 图片与附件能力完整：支持本地图片/附件上传，支持远程图片/附件下载转存，支持读取时回传媒体资源。
+- 文档读取更适合 Agent：返回 `content + blocks + assets + revisionId`，保留图片/附件在正文中的顺序。
+- 更新链路可落地：支持冲突检测、`force` 覆盖、原位置重建、修订号追踪。
+- 本地调试友好：支持 `stdio`、`http`、MCP Inspector、本地 `mcp.json` 配置。
+- 工程化完整：支持 DI、存储抽象、结构化日志、OpenTelemetry、单测和集成测试。
+
+---
+
+## 当前功能
+
+### 文档工作流
+
+- 上传 Markdown 到飞书文档或知识库
+- 批量上传多个 Markdown 文档
+- 读取飞书文档内容
+- 更新已有飞书文档
+- 删除飞书文档
+- 搜索飞书文档
+
+### 媒体能力
+
+- 上传本地图片到文档
+- 上传本地附件到文档
+- 支持远程图片下载后转存
+- 支持远程附件下载后转存
+- 读取时返回图片和附件资源
+- 读取时提供图片内联 / 本地文件两种交付方式
+
+### 飞书管理能力
+
+- OAuth 授权与回调处理
+- 获取当前用户信息
+- 多应用配置与默认应用切换
+- 列出知识库空间
+- 列出云空间文件夹
+- 列出知识库节点
+
+---
+
+## 工具列表
+
+当前共内置 15 个工具：
+
+| 工具名 | 说明 |
+| :-- | :-- |
+| `feishu_auth_url` | 生成飞书 OAuth 2.0 授权链接 |
+| `feishu_auth_callback` | 处理飞书 OAuth 授权回调 |
+| `feishu_upload_markdown` | 上传 Markdown 文档到飞书云文档或知识库 |
+| `feishu_update_document` | 更新已有飞书文档，支持冲突检测 |
+| `feishu_batch_upload_markdown` | 批量上传多个 Markdown 文档 |
+| `feishu_get_document` | 读取文档内容，返回文本、块结构和媒体资源 |
+| `feishu_delete_document` | 删除飞书文档 |
+| `feishu_search_documents` | 搜索飞书文档 |
+| `feishu_list_folders` | 列出飞书云空间文件夹 |
+| `feishu_list_wikis` | 列出飞书知识库空间 |
+| `feishu_list_wiki_nodes` | 列出知识库节点 |
+| `feishu_get_user_info` | 获取当前飞书用户信息 |
+| `feishu_set_default_app` | 设置默认飞书应用 |
+| `feishu_list_apps` | 列出已配置的飞书应用 |
+| `feishu_add_app` | 添加新的飞书应用配置 |
+
+工具注册入口见 [src/mcp-server/tools/definitions/index.ts](/Users/hibson/Documents/mcp-feishu-doc/src/mcp-server/tools/definitions/index.ts:1)。
+
+---
+
+## 典型使用场景
+
+- 把本地 `README.md`、方案文档、周报、分享稿直接上传到飞书知识库
+- 读取飞书文档后再做总结、改写、翻译或生成更新版本
+- 将本地带图片的 Markdown 文档同步到飞书
+- 在 AI Agent 中实现“生成文档 -> 上传 -> 读取 -> 更新”的闭环工作流
+- 使用多个飞书应用账号切换不同环境或不同租户
+
+---
+
+## 快速开始
+
+### 前置要求
+
+- [Node.js](https://nodejs.org/) `>= 20`
+- [pnpm](https://pnpm.io/) `>= 10`
+
+### 安装
+
+```bash
+git clone https://github.com/Hbin-Zhuang/mcp-feishu-doc.git
+cd mcp-feishu-doc
+pnpm install
 ```
-┌─────────────────────────────────────────────────────────┐
-│              MCP 客户端（Claude Code、ChatGPT 等）        │
-└────────────────────┬────────────────────────────────────┘
-                     │ JSON-RPC 2.0
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│           MCP 服务器（工具、资源）                        │
-│           📖 [MCP 服务器指南](src/mcp-server/)          │
-└────────────────────┬────────────────────────────────────┘
-                     │ 依赖注入
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│          依赖注入容器                                     │
-│              📦 [容器指南](src/container/)              │
-└────────────────────┬────────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┐
-        ▼            ▼            ▼
- ┌──────────┐   ┌──────────┐   ┌──────────┐
- │ 服务     │   │ 存储     │   │ 工具     │
- │ 🔌 [→]   │   │ 💾 [→]   │   │ 🛠️ [→]   │
- └──────────┘   └──────────┘   └──────────┘
 
-[→]: src/services/    [→]: src/storage/    [→]: src/utils/
+### 配置环境变量
+
+复制示例配置：
+
+```bash
+cp .env.example .env
 ```
 
-**核心模块：**
+最少需要确认这些字段：
 
-- **[MCP 服务器](src/mcp-server/)** - 工具、资源、提示和传输层实现
-- **[容器](src/container/)** - 使用 tsyringe 进行依赖注入设置，实现清晰的架构
-- **[服务](src/services/)** - 外部服务集成（LLM、语音、图），具有可插拔的提供者
-- **[存储](src/storage/)** - 抽象化的持久层，支持多个后端
-- **[工具](src/utils/)** - 横切关注点（日志记录、安全、解析、遥测）
+- `MCP_TRANSPORT_TYPE`
+- `MCP_HTTP_PORT`
+- `STORAGE_PROVIDER_TYPE`
+- `STORAGE_FILESYSTEM_PATH`
+- `FEISHU_DEFAULT_APP_ID`
+- `FEISHU_DEFAULT_APP_SECRET`
+- `FEISHU_OAUTH_CALLBACK_URL`
 
-> 💡 **提示**：每个模块都有自己的综合 README，包含架构图、使用示例和最佳实践。点击上面的链接深入了解！
+推荐本地调试配置：
 
-## 🛠️ 功能概览
+```env
+MCP_TRANSPORT_TYPE=stdio
+MCP_LOG_LEVEL=debug
+STORAGE_PROVIDER_TYPE="filesystem"
+STORAGE_FILESYSTEM_PATH="./.storage"
+FEISHU_OAUTH_CALLBACK_URL=http://localhost:3010/oauth/feishu/callback
+```
 
-### 飞书工具
+如果你要用 OAuth 网页回调，建议再起一个 `http` 模式实例，或者直接使用 `dev:http`。
 
-| 工具                     | 描述                         |
-| :----------------------- | :--------------------------- |
-| **`feishu_auth_url`**    | 生成飞书 OAuth 2.0 授权链接。 |
-| **`feishu_auth_callback`** | 处理飞书 OAuth 授权回调。   |
-| **`feishu_upload_markdown`** | 上传 Markdown 文档到飞书云文档。 |
-| **`feishu_update_document`** | 更新已存在的飞书文档（支持冲突检测）。 |
-| **`feishu_batch_upload_markdown`** | 批量上传多个 Markdown 文档。 |
-| **`feishu_get_document`** | 读取飞书文档内容。          |
-| **`feishu_delete_document`** | 删除飞书文档。            |
-| **`feishu_search_documents`** | 搜索飞书文档。           |
-| **`feishu_list_folders`** | 列出飞书云空间文件夹。      |
-| **`feishu_list_wikis`** | 列出飞书知识库空间。        |
-| **`feishu_list_wiki_nodes`** | 列出知识库节点。       |
-| **`feishu_get_user_info`** | 获取当前飞书用户信息。   |
-| **`feishu_set_default_app`** | 设置默认飞书应用。      |
-| **`feishu_list_apps`** | 列出已配置的飞书应用。      |
-| **`feishu_add_app`** | 添加飞书应用配置。          |
+---
 
-## 🚀 快速开始
+## 本地快速调试
 
-### MCP 客户端设置/配置
+### 方式一：最快上手，用构建产物 + MCP Inspector
 
-将以下内容添加到您的 MCP 客户端配置文件（例如，`cline_mcp_settings.json`）。
+适合检查工具入参、快速点调、验证上传和读取。
+
+```bash
+pnpm run build
+pnpm run inspector
+```
+
+说明：
+
+- `pnpm run inspector` 会基于 `dist/index.js` 启动服务。
+- 这也是为什么运行 Inspector 前要先执行一次 `pnpm run build`。
+- 如果你刚改了源码但没重新 build，Inspector 里看到的还是旧逻辑。
+
+### 方式二：源码热更新调试，适合本地开发
+
+STDIO 模式：
+
+```bash
+pnpm run dev:stdio
+```
+
+HTTP 模式：
+
+```bash
+pnpm run dev:http
+```
+
+说明：
+
+- `dev:stdio` 适合 MCP Client 或本地 SDK 客户端直接拉起。
+- `dev:http` 适合调 OAuth 回调、HTTP 接入或浏览器调试。
+- 两个命令都基于 `tsx watch src/index.ts`，改代码会自动重启。
+
+### 方式三：本地 MCP Client 直接接入
+
+仓库根目录自带一个示例配置文件 [mcp.json](/Users/hibson/Documents/mcp-feishu-doc/mcp.json:1)。
+
+它适合“构建后运行”的场景：
 
 ```json
 {
   "mcpServers": {
-    "mcp-feishu-doc": {
-      "command": "npx",
-      "args": ["-y", "@hibson/mcp-feishu-doc@latest"],
+    "mcp-feishu-doc-local": {
+      "command": "node",
+      "args": ["./dist/index.js"],
       "env": {
-        "FEISHU_DEFAULT_APP_ID": "cli_xxx",
-        "FEISHU_DEFAULT_APP_SECRET": "xxx",
-        "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
         "MCP_TRANSPORT_TYPE": "stdio",
-        "LOGS_DIR": "~/.mcp-feishu-doc/logs",
+        "MCP_LOG_LEVEL": "debug",
+        "FEISHU_DEFAULT_APP_ID": "cli_your_app_id",
+        "FEISHU_DEFAULT_APP_SECRET": "your_app_secret",
+        "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
         "STORAGE_PROVIDER_TYPE": "filesystem",
-        "STORAGE_FILESYSTEM_PATH": "~/.mcp-feishu-doc/storage"
+        "STORAGE_FILESYSTEM_PATH": "./.storage"
       }
     }
   }
 }
 ```
 
-### 前置要求
+使用步骤：
 
-- [Node.js](https://nodejs.org/) v20.0.0 或更高版本
-- [pnpm](https://pnpm.io/) v10.0.0 或更高版本
+1. 先执行 `pnpm run build`
+2. 将 `mcp.json` 中的 App ID / Secret 改成你自己的
+3. 把这段配置接入你的 MCP Client
 
-### 安装
+如果你想直接调试源码而不是 `dist`，可以改成这样：
 
-1.  **克隆仓库：**
-
-```sh
-git clone https://github.com/Hbin-Zhuang/mcp-feishu-doc.git
+```json
+{
+  "mcpServers": {
+    "mcp-feishu-doc-local-dev": {
+      "command": "pnpm",
+      "args": ["exec", "tsx", "src/index.ts"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "debug",
+        "FEISHU_DEFAULT_APP_ID": "cli_your_app_id",
+        "FEISHU_DEFAULT_APP_SECRET": "your_app_secret",
+        "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
+        "STORAGE_PROVIDER_TYPE": "filesystem",
+        "STORAGE_FILESYSTEM_PATH": "./.storage"
+      }
+    }
+  }
+}
 ```
 
-2.  **进入目录：**
+这个版本的优势是：
 
-```sh
-cd mcp-feishu-doc
-```
-
-3.  **安装依赖：**
-
-```sh
-pnpm install
-```
-
-## ⚙️ 配置
-
-所有配置都在 `src/config/index.ts` 中集中管理并在启动时验证。`.env` 文件中的关键环境变量包括：
-
-| 变量                        | 描述                                                                                                              | 默认值      |
-| :-------------------------- | :---------------------------------------------------------------------------------------------------------------- | :---------- |
-| `MCP_TRANSPORT_TYPE`        | 要使用的传输方式：`stdio` 或 `http`。                                                                             | `http`      |
-| `MCP_HTTP_PORT`             | HTTP 服务器的端口。                                                                                               | `3010`      |
-| `MCP_HTTP_HOST`             | HTTP 服务器的主机名。                                                                                             | `127.0.0.1` |
-| `MCP_AUTH_MODE`             | 身份验证模式：`none`、`jwt` 或 `oauth`。                                                                          | `none`      |
-| `MCP_AUTH_SECRET_KEY`       | **`jwt` 身份验证模式必需。** 32+ 字符的密钥。                                                                     | `(none)`    |
-| `OAUTH_ISSUER_URL`          | **`oauth` 身份验证模式必需。** OIDC 提供者的 URL。                                                                | `(none)`    |
-| `STORAGE_PROVIDER_TYPE`     | 存储后端：`in-memory`、`filesystem`、`supabase`、`surrealdb`、`cloudflare-d1`、`cloudflare-kv`、`cloudflare-r2`。 | `in-memory` |
-| `STORAGE_FILESYSTEM_PATH`   | **`filesystem` 存储必需。** 存储目录的路径。                                                                      | `(none)`    |
-| `FEISHU_DEFAULT_APP_ID`     | 飞书应用 ID（可选，也可通过 OAuth 流程配置）。                                                                    | `(none)`    |
-| `FEISHU_DEFAULT_APP_SECRET` | 飞书应用密钥（可选）。                                                                                            | `(none)`    |
-| `FEISHU_OAUTH_CALLBACK_URL` | 飞书 OAuth 回调地址。                                                                                             | `(none)`    |
-| `SUPABASE_URL`              | **`supabase` 存储必需。** 您的 Supabase 项目 URL。                                                                | `(none)`    |
-| `SUPABASE_SERVICE_ROLE_KEY` | **`supabase` 存储必需。** 您的 Supabase 服务角色密钥。                                                            | `(none)`    |
-| `SURREALDB_URL`             | **`surrealdb` 存储必需。** SurrealDB 端点（例如，`wss://cloud.surrealdb.com/rpc`）。                              | `(none)`    |
-| `SURREALDB_NAMESPACE`       | **`surrealdb` 存储必需。** SurrealDB 命名空间。                                                                   | `(none)`    |
-| `SURREALDB_DATABASE`        | **`surrealdb` 存储必需。** SurrealDB 数据库名称。                                                                 | `(none)`    |
-| `SURREALDB_USERNAME`        | **`surrealdb` 存储可选。** 用于身份验证的数据库用户名。                                                           | `(none)`    |
-| `SURREALDB_PASSWORD`        | **`surrealdb` 存储可选。** 用于身份验证的数据库密码。                                                             | `(none)`    |
-| `OTEL_ENABLED`              | 设置为 `true` 以启用 OpenTelemetry。                                                                              | `false`     |
-| `LOG_LEVEL`                 | 日志记录的最低级别（`debug`、`info`、`warn`、`error`）。                                                          | `info`      |
-| `OPENROUTER_API_KEY`        | OpenRouter LLM 服务的 API 密钥。                                                                                  | `(none)`    |
-
-### 身份验证和授权
-
-- **模式**：`none`（默认）、`jwt`（需要 `MCP_AUTH_SECRET_KEY`）或 `oauth`（需要 `OAUTH_ISSUER_URL` 和 `OAUTH_AUDIENCE`）。
-- **强制执行**：使用 `withToolAuth([...])` 或 `withResourceAuth([...])` 包装您的工具/资源 `logic` 函数以强制执行范围检查。当身份验证模式为 `none` 时，为方便开发人员，范围检查会被绕过。
-
-### 存储
-
-- **服务**：DI 管理的 `StorageService` 为持久化提供一致的 API。**永远不要从工具逻辑直接访问 `fs` 或其他存储 SDK。**
-- **提供者**：默认是 `in-memory`。仅 Node 的提供者包括 `filesystem`。边缘兼容的提供者包括 `supabase`、`surrealdb`、`cloudflare-kv` 和 `cloudflare-r2`。
-- **SurrealDB 设置**：使用 `surrealdb` 提供者时，在首次使用前使用 `docs/surrealdb-schema.surql` 初始化数据库架构。
-- **多租户**：`StorageService` 需要 `context.tenantId`。启用身份验证时，这会自动从 JWT 中的 `tid` 声明传播。
-- **高级功能**：
-  - **安全分页**：带有租户 ID 绑定的不透明游标可防止跨租户攻击
-  - **批处理操作**：`getMany()`、`setMany()`、`deleteMany()` 的并行执行
-  - **TTL 支持**：所有提供者的生存时间，具有适当的过期处理
-  - **全面验证**：租户 ID、密钥和选项的集中输入验证
-
-### 可观测性
-
-- **结构化日志记录**：Pino 已开箱即用集成。所有日志都是 JSON 格式，并包含 `RequestContext`。
-- **OpenTelemetry**：默认禁用。通过设置 `OTEL_ENABLED=true` 并配置 OTLP 端点来启用。每次工具调用都会自动捕获跟踪、指标（持续时间、负载大小）和错误。
-
-## ▶️ 运行服务器
-
-### 本地开发
-
-- **构建并运行生产版本**：
-
-  ```sh
-  # 1. 构建一次（或使用 rebuild）
-  pnpm run build
-
-  # 2. 启动 Inspector（会启动 MCP Server 并打开浏览器调试页）
-  pnpm run inspector
-
-  # 运行构建的服务器
-  pnpm run start:http # HTTP 传输模式
-  # 或
-  pnpm run start:stdio # STDIO 传输模式
-  ```
-
-- **运行检查和测试**：
-  ```sh
-  pnpm run typecheck  # 类型检查
-  pnpm run lint       # 代码检查
-  pnpm run test       # 运行测试套件
-  ```
-
-### Cloudflare Workers
-
-1.  **构建 Worker 包**：
-
-```sh
-pnpm run build
-```
-
-2.  **使用 Wrangler 本地运行**：
-
-```sh
-pnpm run deploy:dev
-```
-
-3.  **部署到 Cloudflare**：
-
-```sh
-pnpm run deploy:prod
-```
-
-> **注意**：`wrangler.toml` 文件已预配置以启用 `nodejs_compat` 以获得最佳结果。
-
-## 📂 项目结构
-
-| 目录                                   | 用途和内容                                                  | 指南                           |
-| :------------------------------------- | :---------------------------------------------------------- | :----------------------------- |
-| `src/mcp-server/tools/definitions`     | 您的工具定义（`*.tool.ts`）。这是您添加新功能的地方。       | [📖 MCP 指南](src/mcp-server/) |
-| `src/mcp-server/resources/definitions` | 您的资源定义（`*.resource.ts`）。这是您添加新数据源的地方。 | [📖 MCP 指南](src/mcp-server/) |
-| `src/mcp-server/transports`            | HTTP 和 STDIO 传输的实现，包括身份验证中间件。              | [📖 MCP 指南](src/mcp-server/) |
-| `src/storage`                          | `StorageService` 抽象和所有存储提供者实现。                 | [💾 存储指南](src/storage/)    |
-| `src/services`                         | 与外部服务的集成（例如，默认的 OpenRouter LLM 提供者）。    | [🔌 服务指南](src/services/)   |
-| `src/container`                        | 依赖注入容器注册和令牌。                                    | [📦 容器指南](src/container/)  |
-| `src/utils`                            | 用于日志记录、错误处理、性能、安全和遥测的核心工具。        |                                |
-| `src/config`                           | 使用 Zod 进行环境变量解析和验证。                           |                                |
-| `tests/`                               | 单元和集成测试，镜像 `src/` 目录结构。                      |                                |
-
-## 📚 文档
-
-每个主要模块都包含综合文档，包括架构图、使用示例和最佳实践：
-
-### 核心模块
-
-- **[MCP 服务器指南](src/mcp-server/)** - 构建 MCP 工具和资源的完整指南
-  - 使用声明式定义创建工具
-  - 使用 URI 模板进行资源开发
-  - 身份验证和授权
-  - 传输层（HTTP/stdio）配置
-  - SDK 上下文和客户端交互
-  - 响应格式化和错误处理
-
-- **[容器指南](src/container/)** - 使用 tsyringe 进行依赖注入
-  - 理解 DI 令牌和注册
-  - 服务生命周期（单例、瞬态、实例）
-  - 构造函数注入模式
-  - 使用模拟依赖进行测试
-  - 向容器添加新服务
-
-- **[服务指南](src/services/)** - 外部服务集成模式
-  - LLM 提供者集成（OpenRouter）
-  - 语音服务（使用 ElevenLabs、Whisper 的 TTS/STT）
-  - 图数据库操作（SurrealDB）
-  - 创建自定义服务提供者
-  - 健康检查和错误处理
-
-- **[存储指南](src/storage/)** - 抽象化的持久层
-  - 存储提供者实现
-  - 多租户和租户隔离
-  - 基于游标的安全分页
-  - 批处理操作和 TTL 支持
-  - 特定于提供者的设置指南
-
-### 其他资源
-
-- **[AGENTS.md](AGENTS.md)** - AI 代理的严格开发规则
-- **[CHANGELOG.md](CHANGELOG.md)** - 版本历史和重大变更
-- **[docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)** - 开发指南
-
-## 🧑‍💻 代理开发指南
-
-有关使用 AI 代理开发本项目的规则，请参阅 **`AGENTS.md`**。关键原则包括：
-
-- **逻辑抛出，处理器捕获**：永远不要在工具/资源 `logic` 中使用 `try/catch`。而是抛出 `McpError`。
-- **使用引导获取缺失输入**：如果工具需要用户输入但未提供，请使用 `SdkContext` 中的 `elicitInput` 函数向用户询问。
-- **传递上下文**：始终通过调用堆栈传递 `RequestContext` 对象。
-- **使用桶导出**：仅在 `index.ts` 桶文件中注册新工具和资源。
-
-## ❓ 常见问题
-
-- **这同时支持 STDIO 和 Streamable HTTP 吗？**
-  - 是的。两种传输都是一等公民。使用 `pnpm run dev:stdio` 或 `pnpm run dev:http`。
-- **我可以将其部署到边缘吗？**
-  - 是的。本项目支持 Cloudflare Workers。运行 `pnpm run build` 后使用 `pnpm run deploy:dev` 或 `pnpm run deploy:prod` 部署。
-- **我必须使用 OpenTelemetry 吗？**
-  - 不，默认情况下它是禁用的。通过在 `.env` 文件中设置 `OTEL_ENABLED=true` 来启用它。
-
-## 🤝 贡献
-
-欢迎提交问题和拉取请求！如果您计划贡献，请在提交 PR 之前运行本地检查和测试。
-
-```sh
-pnpm run typecheck && pnpm run lint
-pnpm run test
-```
-
-## 📜 许可证
-
-本项目根据 Apache 2.0 许可证授权。有关详细信息，请参阅 [LICENSE](./LICENSE) 文件。
+- 不需要先 `build`
+- 改完源码即可生效
+- 适合本地联调工具定义和服务逻辑
 
 ---
 
-<div align="center">
-  <p>
-    <a href="https://github.com/Hbin-Zhuang/mcp-feishu-doc">项目仓库</a>
-  </p>
-</div>
+## 常用调试命令
+
+```bash
+pnpm run build                 # 构建 dist
+pnpm run dev:stdio             # 源码热更新，STDIO
+pnpm run dev:http              # 源码热更新，HTTP
+pnpm run start:stdio           # 运行构建产物，STDIO
+pnpm run start:http            # 运行构建产物，HTTP
+pnpm run inspector             # 启动 MCP Inspector（依赖 dist）
+pnpm run typecheck             # TypeScript 类型检查
+pnpm run lint                  # ESLint 检查
+pnpm run test                  # 单元测试
+pnpm run test:integration:feishu # 飞书集成测试
+```
+
+---
+
+## 推荐调试路径
+
+### 调试工具入参与返回值
+
+推荐：
+
+```bash
+pnpm run build
+pnpm run inspector
+```
+
+### 调试 OAuth 或 HTTP 接口
+
+推荐：
+
+```bash
+pnpm run dev:http
+```
+
+然后访问：
+
+- `http://localhost:3010/oauth/feishu/auth`
+- `http://localhost:3010/oauth/feishu/callback`
+
+### 调试本地 MCP Client 接入
+
+推荐：
+
+- 使用 `mcp.json`
+- 或把 `mcpServers` 配置复制到你的客户端配置文件
+
+### 调试源码逻辑
+
+推荐：
+
+```bash
+pnpm run dev:stdio
+```
+
+然后让本地 MCP Client 使用：
+
+```json
+"command": "pnpm",
+"args": ["exec", "tsx", "src/index.ts"]
+```
+
+---
+
+## 配置说明
+
+所有配置在 [src/config/index.ts](/Users/hibson/Documents/mcp-feishu-doc/src/config/index.ts:1) 中统一解析并做 Zod 校验。
+
+常用环境变量如下：
+
+| 变量 | 说明 | 默认值 |
+| :-- | :-- | :-- |
+| `MCP_TRANSPORT_TYPE` | 传输方式，`stdio` 或 `http` | `stdio` |
+| `MCP_HTTP_HOST` | HTTP 服务主机 | `127.0.0.1` |
+| `MCP_HTTP_PORT` | HTTP 服务端口 | `3010` |
+| `MCP_LOG_LEVEL` | 日志级别 | `debug` |
+| `STORAGE_PROVIDER_TYPE` | 存储后端，推荐本地用 `filesystem` | `filesystem` |
+| `STORAGE_FILESYSTEM_PATH` | 本地文件存储路径 | `./.storage` |
+| `FEISHU_DEFAULT_APP_ID` | 默认飞书应用 ID | 无 |
+| `FEISHU_DEFAULT_APP_SECRET` | 默认飞书应用密钥 | 无 |
+| `FEISHU_OAUTH_CALLBACK_URL` | 飞书 OAuth 回调地址 | 无 |
+| `OTEL_ENABLED` | 是否启用 OpenTelemetry | `false` |
+
+> 注意：本地调试时推荐使用 `filesystem` 存储，否则 OAuth 凭证、文档元数据和默认应用信息不会持久保存。
+
+---
+
+## 当前上传 / 读取 / 更新能力
+
+### 上传
+
+- 支持 `filePath` 和 `content`
+- 支持 `drive` / `wiki`
+- 支持 `targetId` 和 `parentNodeToken`
+- 支持 Markdown 预处理
+- 支持本地图片与附件上传
+- 支持远程图片与附件转存
+
+### 读取
+
+- 返回 `title`
+- 返回近似 Markdown 的 `content`
+- 返回保序的 `blocks`
+- 返回 `assets`
+- 返回 `revisionId`
+
+### 更新
+
+- 支持内容或文件路径更新
+- 支持冲突检测
+- 支持 `force` 强制覆盖
+- 支持原位置重建
+- 支持修订号追踪
+
+---
+
+## 架构概览
+
+核心调用链如下：
+
+```text
+MCP Tool Definition
+  -> FeishuService
+    -> FeishuApiProvider
+    -> MarkdownProcessorProvider
+    -> StorageService
+```
+
+对应目录：
+
+- `src/mcp-server/tools/definitions`：工具定义
+- `src/services/feishu`：飞书服务编排与 API 调用
+- `src/storage`：持久化与多后端抽象
+- `src/container`：依赖注入
+- `src/utils`：日志、性能、解析、遥测等横切能力
+
+---
+
+## 项目结构
+
+| 目录 | 用途 |
+| :-- | :-- |
+| `src/mcp-server/tools/definitions` | MCP 工具定义 |
+| `src/mcp-server/transports` | `stdio` / `http` 传输实现 |
+| `src/services/feishu` | 飞书文档与知识库核心逻辑 |
+| `src/storage` | 存储抽象和 Provider 实现 |
+| `src/container` | 依赖注入配置 |
+| `src/utils` | 日志、性能、解析、遥测 |
+| `tests` | 单元测试与集成测试 |
+| `docs` | 设计、开发与技术分享文档 |
+
+---
+
+## 测试与质量检查
+
+```bash
+pnpm run typecheck
+pnpm run lint
+pnpm run test
+pnpm run test:integration:feishu
+```
+
+---
+
+## 部署
+
+### 本地运行构建产物
+
+```bash
+pnpm run build
+pnpm run start:stdio
+```
+
+或：
+
+```bash
+pnpm run build
+pnpm run start:http
+```
+
+### Cloudflare Workers
+
+```bash
+pnpm run deploy:dev
+pnpm run deploy:prod
+```
+
+---
+
+## 相关文档
+
+- [AGENTS.md](/Users/hibson/Documents/mcp-feishu-doc/AGENTS.md)
+- [docs/DEVELOPMENT_GUIDE.md](/Users/hibson/Documents/mcp-feishu-doc/docs/DEVELOPMENT_GUIDE.md)
+- [src/mcp-server/README.md](/Users/hibson/Documents/mcp-feishu-doc/src/mcp-server/README.md)
+- [src/storage/README.md](/Users/hibson/Documents/mcp-feishu-doc/src/storage/README.md)
+
+---
+
+## 许可证
+
+本项目基于 Apache 2.0 许可证发布，详见 [LICENSE](/Users/hibson/Documents/mcp-feishu-doc/LICENSE)。
