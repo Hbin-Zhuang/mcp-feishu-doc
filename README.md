@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.7-blue.svg?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.6.8-blue.svg?style=flat-square)](./CHANGELOG.md)
 [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE)
@@ -24,7 +24,7 @@
 当前 npm 包名：
 
 - `@hibson/mcp-feishu-doc`
-- 当前仓库版本：`2.6.7`
+- 当前仓库版本：`2.6.8`
 
 ### 先准备飞书应用
 

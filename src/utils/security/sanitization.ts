@@ -471,14 +471,13 @@ export class Sanitization {
             finalSanitizedPath = normalized;
           }
         } else {
-          const resolvedAgainstCwd = path.resolve(normalized);
-          const currentWorkingDir = path.resolve('.');
+          const normalizedForTraversalCheck = normalized.replace(/\\/g, '/');
           if (
-            !resolvedAgainstCwd.startsWith(currentWorkingDir + path.sep) &&
-            resolvedAgainstCwd !== currentWorkingDir
+            normalizedForTraversalCheck === '..' ||
+            normalizedForTraversalCheck.startsWith('../')
           ) {
             throw new Error(
-              'Relative path traversal detected (escapes current working directory context).',
+              'Relative path traversal detected (uses parent directory segments).',
             );
           }
           finalSanitizedPath = normalized;

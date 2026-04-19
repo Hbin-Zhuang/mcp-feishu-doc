@@ -7,6 +7,16 @@ For changelog details from version 2.0.1 to 2.3.0, please refer to the [changelo
 
 ---
 
+## [2.6.8] - 2026-04-19
+
+### Fixed
+
+- **filesystem 存储在根目录 cwd 下的误判修复**：修复 `FileSystemProvider` 依赖当前工作目录校验普通相对路径时的误判问题。此前当 MCP 进程从文件系统根目录 `/` 启动时，像 `feishu-service` 这样的合法 tenantId 也会被错误识别为路径穿越，导致 `feishu_auth_url`、`feishu_list_wikis`、`feishu_get_user_info`、`feishu_upload_markdown` 等依赖 filesystem storage 的工具全部报错。现在改为仅拦截真正包含父级目录跳转的相对路径。
+- **存储层回归测试补充**：新增 `FileSystemProvider` 单元测试，覆盖“cwd 为 `/` 时普通 tenantId 仍可正常读写”和“包含 `../` 的 tenantId 仍会被拒绝”两条关键行为，确保线上托管 MCP 环境与本地开发环境表现一致。
+- **版本号更新**：将版本号从 `2.6.7` 更新为 `2.6.8`，同步更新 `package.json`、`server.json` 与 `README.md` 中的版本标识。
+
+---
+
 ## [2.6.7] - 2026-04-19
 
 ### Changed
