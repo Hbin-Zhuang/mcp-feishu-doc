@@ -1207,6 +1207,9 @@ export class FeishuApiProvider implements IFeishuApiProvider {
   ): Promise<Map<string, string>> {
     if (fileTokens.length === 0) return new Map();
 
+    const ctx = requestContextService.createRequestContext({
+      operation: 'feishu.batchGetTmpDownloadUrls',
+    });
     const map = new Map<string, string>();
     for (
       let start = 0;
@@ -1231,6 +1234,12 @@ export class FeishuApiProvider implements IFeishuApiProvider {
       >(url, accessToken, { method: 'GET' });
 
       if (resp.code !== 0 || !resp.data?.tmp_download_urls) {
+        logger.warning('批量获取临时下载链接失败', {
+          ...ctx,
+          batchSize: batch.length,
+          code: resp.code,
+          msg: resp.msg,
+        });
         continue;
       }
 

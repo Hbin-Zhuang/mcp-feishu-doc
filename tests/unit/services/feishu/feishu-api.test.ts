@@ -858,8 +858,8 @@ describe('飞书 API 提供者', () => {
   });
 
   describe('batchGetTmpDownloadUrls', () => {
-    it('应该按批次请求临时下载链接', async () => {
-      const tokens = Array.from({ length: 21 }, (_, index) => `file_token_${index}`);
+    it('当 token 数量超过飞书接口单次上限时应该自动拆批', async () => {
+      const tokens = Array.from({ length: 6 }, (_, index) => `file_token_${index}`);
 
       mockFetch
         .mockResolvedValueOnce({
@@ -868,7 +868,7 @@ describe('飞书 API 提供者', () => {
               JSON.stringify({
                 code: 0,
                 data: {
-                  tmp_download_urls: tokens.slice(0, 20).map((fileToken) => ({
+                  tmp_download_urls: tokens.slice(0, 5).map((fileToken) => ({
                     file_token: fileToken,
                     tmp_download_url: `https://cdn.example.com/${fileToken}`,
                   })),
@@ -884,8 +884,8 @@ describe('飞书 API 提供者', () => {
                 data: {
                   tmp_download_urls: [
                     {
-                      file_token: tokens[20],
-                      tmp_download_url: `https://cdn.example.com/${tokens[20]}`,
+                      file_token: tokens[5],
+                      tmp_download_url: `https://cdn.example.com/${tokens[5]}`,
                     },
                   ],
                 },
@@ -901,6 +901,45 @@ describe('飞书 API 提供者', () => {
       }).batchGetTmpDownloadUrls('test_access_token', tokens);
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(6);
+      expect(result.get('file_token_0')).toBe(
+        'https://cdn.example.com/file_token_0',
+      );
+      expect(result.get('file_token_5')).toBe(
+        'https://cdn.example.com/file_token_5',
+      );
+    });
+
+    it('应该按批次请求临时下载链接', async () => {
+      const tokens = Array.from({ length: 21 }, (_, index) => `file_token_${index}`);
+      const batchSize = DOC_MEDIA_READ_LIMITS.tmpDownloadUrlBatchSize;
+
+      for (let start = 0; start < tokens.length; start += batchSize) {
+        const batch = tokens.slice(start, start + batchSize);
+        mockFetch.mockResolvedValueOnce({
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  tmp_download_urls: batch.map((fileToken) => ({
+                    file_token: fileToken,
+                    tmp_download_url: `https://cdn.example.com/${fileToken}`,
+                  })),
+                },
+              }),
+            ),
+        });
+      }
+
+      const result = await (provider as unknown as {
+        batchGetTmpDownloadUrls: (
+          accessToken: string,
+          fileTokens: string[],
+        ) => Promise<Map<string, string>>;
+      }).batchGetTmpDownloadUrls('test_access_token', tokens);
+
+      expect(mockFetch).toHaveBeenCalledTimes(Math.ceil(tokens.length / batchSize));
       expect(result.size).toBe(21);
       expect(result.get('file_token_0')).toBe(
         'https://cdn.example.com/file_token_0',

@@ -195,8 +195,8 @@ export const DOC_IMAGE_EMBED_LIMITS = {
  * DOC_MEDIA_READ_LIMITS const 文档媒体读取限制.
  */
 export const DOC_MEDIA_READ_LIMITS = {
-  /** 单次临时下载链接请求最多携带的 file token 数量 */
-  tmpDownloadUrlBatchSize: 20,
+  /** 单次临时下载链接请求最多携带的 file token 数量（飞书接口实测上限为 5） */
+  tmpDownloadUrlBatchSize: 5,
   /** 下载文档媒体时的最大并发数 */
   downloadConcurrency: 3,
 };
