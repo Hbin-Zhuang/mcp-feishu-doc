@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.6-blue.svg?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.6.7-blue.svg?style=flat-square)](./CHANGELOG.md)
 [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE)
@@ -24,11 +24,38 @@
 当前 npm 包名：
 
 - `@hibson/mcp-feishu-doc`
-- 当前仓库版本：`2.6.6`
+- 当前仓库版本：`2.6.7`
 
-### 直接复制的 `mcp.json`
+### 先准备飞书应用
 
-适用于支持 `mcpServers` 配置的 MCP Client。复制后只需要回填你自己的 `appId` / `appSecret`。
+在配置 MCP Client 之前，先去 [飞书开放平台](https://open.feishu.cn) 创建一个自建应用。第一次接入最核心的是下面 4 个点：
+
+1. 创建一个自建应用，拿到 `App ID` 和 `App Secret`
+2. 在「安全设置」里添加重定向 URL：`http://localhost:3010/oauth/feishu/callback`
+3. 在「权限管理」里开通最小权限集合
+4. 如果你要操作知识库，再去目标 Wiki 里「添加文档应用」
+
+建议开通的权限：
+
+| 权限 | Scope | 作用 |
+| :-- | :-- | :-- |
+| 获取用户基本信息 | `contact:user.base:readonly` | 用于识别当前授权用户 |
+| 读写飞书文档 | `docx:document` | 创建、读取、更新 Docx 文档 |
+| 云空间 | `drive:drive` | Markdown 导入、媒体上传、文件夹列表 |
+| 读写知识库 | `wiki:wiki` | 列知识库、移动到 Wiki、创建 Wiki 节点 |
+| 离线访问 | `offline_access` | 获取 `refresh_token`，避免频繁重新授权 |
+
+补充说明：
+
+- 回调地址必须和 `FEISHU_OAUTH_CALLBACK_URL` 完全一致，路径必须是 `/oauth/feishu/callback`。
+- 如果目标是知识库，除了开放平台里的 API 权限外，还需要在目标 Wiki 中手动「添加文档应用」，否则常见表现是 `feishu_list_wikis` 空列表、上传到 Wiki 时报 403。
+- 某些租户里权限需要经过应用发布或管理员审批后才会真正生效。
+
+### 再把 MCP 配到客户端
+
+下面这段 `mcp.json` 可以直接复制。填上你自己的 `appId` / `appSecret` 后就能用。
+
+适用于支持 `mcpServers` 配置的 MCP Client。
 
 ```json
 {
@@ -55,14 +82,16 @@
 - `STORAGE_PROVIDER_TYPE` 使用 `filesystem`，这样 OAuth 凭证、默认应用信息、文档元数据都能持久化。
 - `STORAGE_FILESYSTEM_PATH` 和 `LOGS_DIR` 建议放到独立目录，便于排查授权、上传、读取问题。
 - `FEISHU_OAUTH_CALLBACK_URL` 默认可以直接使用 `http://localhost:3010/oauth/feishu/callback`。
+- 在 `stdio` 模式下，只要配置了 `FEISHU_OAUTH_CALLBACK_URL`，服务会自动拉起本地 OAuth 回调地址。
 
-### 最短使用路径
+### 首次使用流程
 
-1. 把上面的配置加到你的 MCP Client。
-2. 回填 `FEISHU_DEFAULT_APP_ID` 和 `FEISHU_DEFAULT_APP_SECRET`。
-3. 启动客户端后先调用 `feishu_auth_url` 获取授权链接。
-4. 浏览器完成授权回调后，再调用 `feishu_get_user_info` 或 `feishu_list_wikis` 验证是否可用。
-5. 开始使用 `feishu_upload_markdown`、`feishu_get_document`、`feishu_update_document`。
+1. 在飞书开放平台创建自建应用，并完成回调地址和权限配置。
+2. 把上面的 `mcp.json` 配到你的 MCP Client。
+3. 回填 `FEISHU_DEFAULT_APP_ID` 和 `FEISHU_DEFAULT_APP_SECRET`。
+4. 启动客户端后先调用 `feishu_auth_url` 获取授权链接。
+5. 浏览器完成授权回调后，再调用 `feishu_get_user_info` 或 `feishu_list_wikis` 验证是否可用。
+6. 开始使用 `feishu_upload_markdown`、`feishu_get_document`、`feishu_update_document`。
 
 ### 最常用的几个工具
 
