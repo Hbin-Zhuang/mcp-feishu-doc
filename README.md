@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-2.6.5-blue.svg?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.6.6-blue.svg?style=flat-square)](./CHANGELOG.md)
 [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-8A2BE2.svg?style=flat-square)](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/changelog.mdx)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.24.3-green.svg?style=flat-square)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE)
@@ -14,6 +14,63 @@
 [![pnpm](https://img.shields.io/badge/pnpm-10.19.0-orange.svg?style=flat-square)](https://pnpm.io/)
 
 </div>
+
+---
+
+## 3 分钟接入
+
+如果你只是想在 MCP Client 里直接用已经发布到 npm 的版本，优先看这一节，不需要先 clone 仓库。
+
+当前 npm 包名：
+
+- `@hibson/mcp-feishu-doc`
+- 当前仓库版本：`2.6.6`
+
+### 直接复制的 `mcp.json`
+
+适用于支持 `mcpServers` 配置的 MCP Client。复制后只需要回填你自己的 `appId` / `appSecret`。
+
+```json
+{
+  "mcpServers": {
+    "mcp-feishu-doc": {
+      "command": "npx",
+      "args": ["-y", "@hibson/mcp-feishu-doc@latest"],
+      "env": {
+        "FEISHU_DEFAULT_APP_ID": "cli_your_app_id",
+        "FEISHU_DEFAULT_APP_SECRET": "your_app_secret",
+        "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "LOGS_DIR": "~/.mcp-feishu-doc/logs",
+        "STORAGE_PROVIDER_TYPE": "filesystem",
+        "STORAGE_FILESYSTEM_PATH": "~/.mcp-feishu-doc/storage"
+      }
+    }
+  }
+}
+```
+
+建议：
+
+- `STORAGE_PROVIDER_TYPE` 使用 `filesystem`，这样 OAuth 凭证、默认应用信息、文档元数据都能持久化。
+- `STORAGE_FILESYSTEM_PATH` 和 `LOGS_DIR` 建议放到独立目录，便于排查授权、上传、读取问题。
+- `FEISHU_OAUTH_CALLBACK_URL` 默认可以直接使用 `http://localhost:3010/oauth/feishu/callback`。
+
+### 最短使用路径
+
+1. 把上面的配置加到你的 MCP Client。
+2. 回填 `FEISHU_DEFAULT_APP_ID` 和 `FEISHU_DEFAULT_APP_SECRET`。
+3. 启动客户端后先调用 `feishu_auth_url` 获取授权链接。
+4. 浏览器完成授权回调后，再调用 `feishu_get_user_info` 或 `feishu_list_wikis` 验证是否可用。
+5. 开始使用 `feishu_upload_markdown`、`feishu_get_document`、`feishu_update_document`。
+
+### 最常用的几个工具
+
+- `feishu_auth_url`：生成授权链接
+- `feishu_upload_markdown`：上传 Markdown 到云文档或知识库
+- `feishu_get_document`：读取文档正文、块结构和图片/附件资源
+- `feishu_update_document`：更新已有文档，支持冲突检测
+- `feishu_list_wikis` / `feishu_list_wiki_nodes`：定位知识库空间和节点
 
 ---
 
@@ -110,6 +167,8 @@
 
 ## 快速开始
 
+这一节主要面向本地开发、调试和二次开发。如果你只是要在客户端里直接用，请优先看前面的“3 分钟接入”。
+
 ### 前置要求
 
 - [Node.js](https://nodejs.org/) `>= 20`
@@ -196,7 +255,31 @@ pnpm run dev:http
 
 仓库根目录自带一个示例配置文件 [mcp.json](/Users/hibson/Documents/mcp-feishu-doc/mcp.json:1)。
 
-它适合“构建后运行”的场景：
+默认示例展示的是“直接使用 npm 已发布版本”的方式。如果你要在本地开发仓库源码，可以参考下面两个版本。
+
+已发布版本：
+
+```json
+{
+  "mcpServers": {
+    "mcp-feishu-doc": {
+      "command": "npx",
+      "args": ["-y", "@hibson/mcp-feishu-doc@latest"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "FEISHU_DEFAULT_APP_ID": "cli_your_app_id",
+        "FEISHU_DEFAULT_APP_SECRET": "your_app_secret",
+        "FEISHU_OAUTH_CALLBACK_URL": "http://localhost:3010/oauth/feishu/callback",
+        "LOGS_DIR": "~/.mcp-feishu-doc/logs",
+        "STORAGE_PROVIDER_TYPE": "filesystem",
+        "STORAGE_FILESYSTEM_PATH": "~/.mcp-feishu-doc/storage"
+      }
+    }
+  }
+}
+```
+
+本地构建产物版本：
 
 ```json
 {
@@ -218,13 +301,7 @@ pnpm run dev:http
 }
 ```
 
-使用步骤：
-
-1. 先执行 `pnpm run build`
-2. 将 `mcp.json` 中的 App ID / Secret 改成你自己的
-3. 把这段配置接入你的 MCP Client
-
-如果你想直接调试源码而不是 `dist`，可以改成这样：
+本地源码直连版本：
 
 ```json
 {
@@ -246,11 +323,11 @@ pnpm run dev:http
 }
 ```
 
-这个版本的优势是：
+不同方式适用场景：
 
-- 不需要先 `build`
-- 改完源码即可生效
-- 适合本地联调工具定义和服务逻辑
+- `npx @hibson/mcp-feishu-doc@latest`：给最终用户接入，最省事。
+- `node ./dist/index.js`：适合验证你当前仓库 build 出来的产物。
+- `pnpm exec tsx src/index.ts`：适合本地开发调试，改完源码立即生效。
 
 ---
 
